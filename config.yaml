@@ -1,0 +1,22 @@
+# App
+APP_NAME: "StudyRAG"
+CHUNK_SIZE: 800
+CHUNK_OVERLAP: 150
+TOP_K: 5
+
+# Embeddings (local, free)
+EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DEVICE: "cpu"  # or "cuda" if GPU available
+
+# Vector Store
+VECTOR_DB_PATH: "./data/chroma_db"
+COLLECTION_NAME: "course_materials"
+
+# LLM - Groq (free tier) or Ollama
+LLM_PROVIDER: "groq"  # "groq" or "ollama"
+GROQ_MODEL: "openai/gpt-oss-20b"
+OLLAMA_MODEL: "llama3.1:8b"
+OLLAMA_BASE_URL: "http://localhost:11434"
+
+# API Keys (from .env)
+# GROQ_API_KEY=your_key_here

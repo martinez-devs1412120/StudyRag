@@ -1,0 +1,18 @@
+# Core
+sentence-transformers==2.2.2
+pypdf==3.17.1
+python-pptx==0.6.23
+faiss-cpu==1.8.0
+
+# LLM - Groq (free tier) or Ollama (local)
+groq==0.4.2
+
+# Utilities
+python-dotenv==1.0.0
+tqdm==4.66.1
+typer==0.9.0
+rich==13.7.0
+
+# UI - live demo
+streamlit==1.31.0
+scikit-learn==1.9.0
