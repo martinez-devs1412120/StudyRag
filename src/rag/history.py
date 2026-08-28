@@ -1,4 +1,4 @@
-"""Per-user history — Supabase table `history` or local JSON fallback."""
+"""Per-user history — Firebase Firestore (primary) -> Supabase -> local JSON fallback."""
 import os
 import json
 from pathlib import Path
@@ -20,7 +20,23 @@ def save_record(email: str, question: str, answer: str, sources: List[Dict]):
         "ts": datetime.now(timezone.utc).isoformat(),
         "email": email,
     }
-    # try Supabase first
+    # try Firebase Firestore first (persistent on Render)
+    try:
+        from src.rag.auth_firebase import init_firebase
+        db = init_firebase()
+        if db is not None:
+            doc = {
+                "user_email": email,
+                "question": question,
+                "answer": answer,
+                "sources": json.dumps(sources),
+                "created_at": datetime.now(timezone.utc),
+            }
+            db.collection("history").add(doc)
+            return True
+    except Exception:
+        pass
+    # try Supabase
     try:
         from src.rag.auth import get_supabase
         sb = get_supabase()
@@ -49,6 +65,27 @@ def save_record(email: str, question: str, answer: str, sources: List[Dict]):
     return True
 
 def load_history(email: str, limit: int = 20) -> List[Dict]:
+    # Firebase first
+    try:
+        from src.rag.auth_firebase import init_firebase
+        db = init_firebase()
+        if db is not None:
+            q = db.collection("history").where("user_email","==",email).order_by("created_at", direction="DESCENDING").limit(limit).stream()
+            rows = list(q)
+            if rows:
+                out = []
+                for d in rows:
+                    r = d.to_dict()
+                    out.append({
+                        "question": r.get("question"),
+                        "answer": r.get("answer"),
+                        "sources": json.loads(r.get("sources","[]")) if isinstance(r.get("sources"), str) else r.get("sources", []),
+                        "ts": r.get("created_at").isoformat() if hasattr(r.get("created_at"), "isoformat") else str(r.get("created_at")),
+                        "email": r.get("user_email"),
+                    })
+                return list(reversed(out))
+    except Exception:
+        pass
     try:
         from src.rag.auth import get_supabase
         sb = get_supabase()
@@ -82,6 +119,16 @@ def clear_history(email: str):
     p = _local_path(email)
     if p.exists():
         p.unlink()
+    # Firebase
+    try:
+        from src.rag.auth_firebase import init_firebase
+        db = init_firebase()
+        if db is not None:
+            docs = db.collection("history").where("user_email","==",email).stream()
+            for d in docs:
+                d.reference.delete()
+    except Exception:
+        pass
     try:
         from src.rag.auth import get_supabase
         sb = get_supabase()
