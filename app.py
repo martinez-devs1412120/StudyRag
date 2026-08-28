@@ -165,19 +165,15 @@ with st.sidebar:
             </div>
         </div>
         """, unsafe_allow_html=True)
-        # Gmail demo + Google OAuth
+        # Gmail demo — Firebase primary (persistent), local fallback
         with st.expander("🔐 Save history — Sign in with Gmail", expanded=False):
-            st.caption("Anonymous works. Sign in to save chats per Gmail (local or Supabase).")
+            st.caption("Anonymous works. Sign in to save chats per Gmail (Firebase if configured, else local).")
             gmail = st.text_input("Gmail", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
-            if st.button("Sign in (demo Gmail)", use_container_width=True):
+            if st.button("Sign in (demo Gmail)", use_container_width=True, help="Enter Gmail, saves to Firestore when FIREBASE_* set, else local data/history/"):
                 ok, msg = sign_in_mock(gmail)
                 if ok: st.success(msg); st.rerun()
                 else: st.error(msg)
-            st.divider()
-            if st.button("Sign in with Google (OAuth)", use_container_width=True, help="Requires SUPABASE_URL/KEY + Google OAuth setup"):
-                url, err = sign_in_google()
-                if err: st.info(err)
-                elif url: st.markdown(f"[Continue to Google]({url})")
+            st.caption("Google OAuth via Firebase coming soon — demo Gmail already persistent with Firebase.")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
