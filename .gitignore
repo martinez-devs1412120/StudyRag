@@ -3,5 +3,6 @@ data/chroma_db/
 __pycache__/
 .venv/
 *.pyc
-data/documents/Group1.pdf
+data/documents/*
+!data/documents/.gitkeep
 data/history/

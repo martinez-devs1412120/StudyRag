@@ -25,13 +25,26 @@ section[data-testid="stSidebar"] {background: var(--panel); border-right:1px sol
 section[data-testid="stSidebar"] .block-container {padding: 14px 10px; height: 100vh; overflow-y: auto; display: flex; flex-direction: column;}
 section[data-testid="stSidebar"] [data-testid="stMarkdown"] {margin: 0;}
 
+/* Sidebar collapsed state — responsive */
+section[data-testid="stSidebar"][aria-expanded="false"] {min-width: 60px; max-width: 60px;}
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-user-info,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-section-title,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-history-item span.history-text,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-history-item span.history-time,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-footer-text,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-divider + .sb-section-title {display: none;}
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-user {justify-content: center; padding: 10px 4px;}
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-user img {width: 28px; height: 28px;}
+section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"] {text-align: center; padding: 8px 4px; font-size: 0; min-height: 36px;}
+section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"]::before {content: attr(aria-label); font-size: 11px;}
+
 /* Sidebar user badge */
 .sb-user {display:flex; align-items:center; gap:10px; padding:10px 8px; border-radius:8px; margin-bottom:4px; transition: background 0.15s;}
 .sb-user:hover {background: var(--hover);}
 .sb-user img {width:32px; height:32px; border-radius:50%; border:2px solid #333;}
-.sb-user-info {display:flex; flex-direction:column; gap:1px;}
-.sb-user-name {font-size:13px; font-weight:600; color:var(--t); line-height:1;}
-.sb-user-role {font-size:9px; font-weight:600; color:var(--t3); letter-spacing:0.1em; text-transform:uppercase;}
+.sb-user-info {display:flex; flex-direction:column; gap:1px; min-width:0;}
+.sb-user-name {font-size:13px; font-weight:600; color:var(--t); line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.sb-user-role {font-size:9px; font-weight:600; color:var(--t3); letter-spacing:0.1em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 
 /* Nav buttons */
 .sb-nav-item {display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:6px; cursor:pointer; transition: background 0.15s; margin:1px 0;}
@@ -51,13 +64,18 @@ section[data-testid="stSidebar"] [data-testid="stMarkdown"] {margin: 0;}
 /* History items */
 .sb-history-item {display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; transition: background 0.15s; margin:1px 0;}
 .sb-history-item:hover {background: var(--hover);}
-.sb-history-item span.history-icon {font-size:12px; color:var(--t3);}
+.sb-history-item span.history-icon {font-size:11px; color:var(--t3); width:14px; text-align:center; flex-shrink:0;}
 .sb-history-item span.history-text {font-size:11px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;}
 .sb-history-item span.history-time {font-size:9px; color:var(--t3); white-space:nowrap;}
 
 /* Sidebar footer */
 .sb-footer {margin-top:auto; padding:8px; border-top:1px solid var(--line);}
 .sb-footer-text {font-size:9px; color:var(--t3); letter-spacing:0.08em;}
+
+/* Auth form */
+.sb-auth-card {background: var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 12px; margin:8px 0;}
+.sb-auth-title {font-size:12px; font-weight:700; color:var(--t); margin-bottom:6px; letter-spacing:0.02em;}
+.sb-auth-sub {font-size:10px; color:var(--t3); line-height:1.5; margin-bottom:10px;}
 
 /* Main content */
 .block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px;}
@@ -94,6 +112,21 @@ div[data-testid="stSidebar"] button[kind="secondary"]:hover {
 }
 div[data-testid="stSidebar"] button[kind="secondary"]:disabled {
     opacity: 0.4;
+}
+
+/* Sign-in form inputs */
+div[data-testid="stSidebar"] input[type="text"],
+div[data-testid="stSidebar"] input[type="email"],
+div[data-testid="stSidebar"] input[type="password"] {
+    background: var(--bg);
+    border: 1px solid var(--line2);
+    border-radius: 6px;
+    color: var(--t);
+    font-size: 12px;
+    padding: 8px 10px;
+}
+div[data-testid="stSidebar"] input:focus {
+    border-color: var(--t3);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -134,7 +167,7 @@ while len(file_rows) < 6:
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    # User badge — dynamic Gmail auth (optional for history)
+    # User badge
     user = get_user()
     if is_signed_in():
         st.markdown(f"""
@@ -148,11 +181,10 @@ with st.sidebar:
         """, unsafe_allow_html=True)
         if st.button("Sign out", key="signout", use_container_width=True):
             sign_out(); st.rerun()
-        # Saved history count
         try:
             hist = load_history(user["email"], limit=5)
             if hist:
-                st.caption(f"📚 {len(hist)} saved chats")
+                st.caption(f"{len(hist)} saved chats")
         except Exception:
             pass
     else:
@@ -165,23 +197,25 @@ with st.sidebar:
             </div>
         </div>
         """, unsafe_allow_html=True)
-        # Gmail demo — Firebase primary (persistent), local fallback
-        with st.expander("🔐 Save history — Sign in with Gmail", expanded=False):
-            st.caption("Anonymous works. Sign in to save chats per Gmail (Firebase if configured, else local).")
-            gmail = st.text_input("Gmail", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
-            if st.button("Sign in (demo Gmail)", use_container_width=True, help="Enter Gmail, saves to Firestore when FIREBASE_* set, else local data/history/"):
-                ok, msg = sign_in_mock(gmail)
-                if ok: st.success(msg); st.rerun()
-                else: st.error(msg)
-            st.caption("Google OAuth via Firebase coming soon — demo Gmail already persistent with Firebase.")
+        st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="sb-auth-card">
+            <div class="sb-auth-title">Sign in with Gmail</div>
+            <div class="sb-auth-sub">Anonymous usage works. Sign in to persist your chat history across sessions.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        gmail = st.text_input("Email", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
+        if st.button("Sign in", use_container_width=True, key="btn_signin"):
+            ok, msg = sign_in_mock(gmail)
+            if ok: st.success(msg); st.rerun()
+            else: st.error(msg)
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
     # Navigation
-    navs = [("DASHBOARD","🏠"),("DATABASE","📁"),("STATISTICS","📊"),("SETTINGS","⚙️"),("MEMBERS","👥")]
-    for key, icon in navs:
+    navs = [("DASHBOARD","Dashboard"),("DATABASE","Database"),("STATISTICS","Statistics"),("SETTINGS","Settings"),("MEMBERS","Members")]
+    for key, label in navs:
         disabled = key == "MEMBERS"
-        label = f"{icon}  {key}"
         if disabled:
             st.button(label, key=f"nav_{key}", use_container_width=True, disabled=True, help="Coming soon")
         else:
@@ -191,7 +225,7 @@ with st.sidebar:
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
-    # Chat history — saved per Gmail if signed in, else session only
+    # Chat history
     st.markdown('<div class="sb-section-title">Recent Chats</div>', unsafe_allow_html=True)
     if is_signed_in():
         user = get_user()
@@ -199,15 +233,14 @@ with st.sidebar:
         if saved:
             for rec in saved[-5:]:
                 q = rec["question"][:28] + ("..." if len(rec["question"]) > 28 else "")
-                # time ago simple
-                ts = rec.get("ts","")[:10] if rec.get("ts") else "saved"
-                if st.button(f"💬 {q}", key=f"hist_{q}_{ts}", use_container_width=True, help=rec["question"]):
+                ts = rec.get("ts","")[:10] if rec.get("ts") else ""
+                if st.button(f"{q}", key=f"hist_{q}_{ts}", use_container_width=True, help=rec["question"]):
                     st.session_state.messages.append({"role":"user","content":rec["question"]})
                     st.session_state.messages.append({"role":"assistant","content":rec["answer"],"sources":rec.get("sources",[])})
                     st.session_state.page = "DASHBOARD"; st.rerun()
         else:
-            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">💬</span><span class="history-text">No saved chats yet</span></div>""", unsafe_allow_html=True)
-        if st.button("Clear saved history", key="clear_saved"):
+            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">-</span><span class="history-text">No saved chats</span></div>""", unsafe_allow_html=True)
+        if st.button("Clear history", key="clear_saved"):
             from src.rag.history import clear_history as ch
             ch(user["email"]); st.success("Cleared"); st.rerun()
     else:
@@ -215,17 +248,16 @@ with st.sidebar:
             user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
             for msg in user_msgs[:5]:
                 text = msg["content"][:28] + ("..." if len(msg["content"]) > 28 else "")
-                st.markdown(f"""<div class="sb-history-item"><span class="history-icon">💬</span><span class="history-text">{text}</span><span class="history-time">session</span></div>""", unsafe_allow_html=True)
-            st.caption("Sign in to persist")
+                st.markdown(f"""<div class="sb-history-item"><span class="history-icon">-</span><span class="history-text">{text}</span><span class="history-time">session</span></div>""", unsafe_allow_html=True)
         else:
-            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">💬</span><span class="history-text">No chats yet — sign in to save</span></div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">-</span><span class="history-text">No chats yet</span></div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
     # Footer
     st.markdown(f"""
     <div class="sb-footer">
-        <span class="sb-footer-text">📁 {len(docs)} files • {st.session_state.page}</span>
+        <span class="sb-footer-text">{len(docs)} files / {st.session_state.page.lower()}</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -298,7 +330,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
                         try: save_record(get_user()["email"], q, r["answer"], r["sources"])
                         except Exception: pass
                 except Exception as e:
-                    st.session_state.messages.append({"role":"assistant","content":f"⚠️ {e}","sources":[]})
+                    st.session_state.messages.append({"role":"assistant","content":f"Error: {e}","sources":[]})
                 st.rerun()
     else:
         st.caption(f"{len([m for m in st.session_state.messages if m['role']=='user'])} questions • Groq {pipeline.cfg['GROQ_MODEL']}")
@@ -309,7 +341,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
         else:
             st.markdown(f'<div style="display:flex; justify-content:flex-start; margin:6px 0;"><div class="chat-ai">{m["content"]}</div></div>', unsafe_allow_html=True)
             if m.get("sources"):
-                with st.expander(f"📎 {len(m['sources'])} sources", expanded=False):
+                with st.expander(f"{len(m['sources'])} sources", expanded=False):
                     for s in m["sources"]:
                         st.markdown(f"<div class='source-card'><b style='font-size:12px;'>{s['source']}</b> <span style='float:right; font-size:10px; color:#9A9A9A;'>{s['score']:.2f}</span><br><span style='font-size:10px; color:#6B6B6B;'>chunk {s['chunk_id']}</span></div>", unsafe_allow_html=True)
 
@@ -324,12 +356,12 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
                     try: save_record(get_user()["email"], prompt, r["answer"], r["sources"])
                     except Exception: pass
             except Exception as e:
-                st.session_state.messages.append({"role":"assistant","content":f"⚠️ {e}","sources":[]})
+                st.session_state.messages.append({"role":"assistant","content":f"Error: {e}","sources":[]})
         st.rerun()
 
 elif st.session_state.page == "DATABASE":
     st.markdown('<div class="bar-label">Database</div>', unsafe_allow_html=True)
-    st.markdown("`data/documents/` • chunk {} / {}".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
+    st.markdown("`data/documents/` • chunk {} / {} • TF-IDF".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
     if docs:
         for p in docs:
             a,b,c = st.columns([5,1,1])
@@ -341,15 +373,29 @@ elif st.session_state.page == "DATABASE":
         if st.button("Clear store"):
             pipeline.clear(); st.success("Cleared"); st.rerun()
     else:
-        st.info("No files")
-    up = st.file_uploader("Upload PDF/PPTX", type=["pdf","pptx"], accept_multiple_files=True, label_visibility="collapsed")
-    if up and st.button("Ingest", type="primary"):
+        st.markdown("""
+        <style>
+        @keyframes float {0%,100%{transform:translateY(0px)} 50%{transform:translateY(-6px)}}
+        @keyframes pulse-border {0%{border-color:#2A2A2A} 50%{border-color:#3A3A3A} 100%{border-color:#2A2A2A}}
+        .drag-box {background:#141414; border:2px dashed #2A2A2A; border-radius:12px; padding:22px; text-align:center; animation: pulse-border 2.2s infinite;}
+        .drag-icon {font-size:28px; animation: float 1.8s ease-in-out infinite; display:inline-block;}
+        </style>
+        <div class="drag-box">
+            <div class="drag-icon">📄</div>
+            <div style="font-size:13px; font-weight:600; color:#F5F5F5; margin-top:8px;">Drag & drop PDFs / PPTX here</div>
+            <div style="font-size:11px; color:#9A9A9A; margin-top:4px;">or click <b style="color:#F5F5F5;">Browse files</b> below • Limit 200MB per file</div>
+            <div style="font-size:10px; color:#6B6B6B; margin-top:10px; letter-spacing:0.08em;">QUICK GUIDE: 1) Drop file → 2) Click Ingest → 3) Ask in Dashboard</div>
+        </div>
+        """, unsafe_allow_html=True)
+    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+    up = st.file_uploader("Drag files here or choose files", type=["pdf","pptx"], accept_multiple_files=True, label_visibility="collapsed", help="PDF or PPTX, up to 200MB each")
+    if up and st.button("Ingest — make searchable", type="primary", use_container_width=True):
         d=Path("data/documents"); d.mkdir(parents=True, exist_ok=True)
         tot=0
         for f in up:
             out=d/f.name; out.write_bytes(f.getbuffer())
             t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=f.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); tot+=len(ch)
-        st.success(f"{len(up)} files → {tot} chunks"); st.rerun()
+        st.success(f"✅ {len(up)} file(s) → {tot} chunks indexed"); st.rerun()
 
 elif st.session_state.page == "STATISTICS":
     st.markdown('<div class="bar-label">Statistics</div>', unsafe_allow_html=True)
@@ -367,4 +413,4 @@ elif st.session_state.page == "SETTINGS":
         try: r=pipeline.query("hello"); st.success(r["answer"][:300])
         except Exception as e: st.error(str(e))
 
-st.caption("Compact • neat spacing 8-12px • hierarchy 9/13/18/32 • Inter 400/600/700 • WCAG AA • ref preserved")
+st.caption("Compact / neat spacing 8-12px / hierarchy 9/13/18/32 / Inter 400/600/700")
