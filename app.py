@@ -14,11 +14,50 @@ st.set_page_config(page_title="StudyRAG", page_icon="◼", layout="wide")
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-:root { --bg:#0E0E0E; --panel:#171717; --card:#1C1C1C; --card2:#1E1E1E; --line:#242424; --line2:#2A2A2A; --t:#F5F5F5; --t2:#9A9A9A; --t3:#6B6B6B; --accent:#FFFFFF; }
+:root { --bg:#0E0E0E; --panel:#171717; --card:#1C1C1C; --card2:#1E1E1E; --line:#242424; --line2:#2A2A2A; --t:#F5F5F5; --t2:#9A9A9A; --t3:#6B6B6B; --accent:#FFFFFF; --hover:#1A1A1A; --active:#222222; --sidebar-w:240px; }
 html, body, [class*="css"] {font-family:'Inter',system-ui,sans-serif;}
 .stApp {background: var(--bg);}
-section[data-testid="stSidebar"] {background: var(--panel); border-right:1px solid var(--line); min-width: 220px; max-width: 220px;}
-section[data-testid="stSidebar"] .block-container {padding: 14px 10px;}
+
+/* --- Sidebar --- */
+section[data-testid="stSidebar"] {background: var(--panel); border-right:1px solid var(--line); min-width: var(--sidebar-w); max-width: var(--sidebar-w);}
+section[data-testid="stSidebar"] .block-container {padding: 14px 10px; height: 100vh; overflow-y: auto; display: flex; flex-direction: column;}
+section[data-testid="stSidebar"] [data-testid="stMarkdown"] {margin: 0;}
+
+/* Sidebar user badge */
+.sb-user {display:flex; align-items:center; gap:10px; padding:10px 8px; border-radius:8px; margin-bottom:4px; transition: background 0.15s;}
+.sb-user:hover {background: var(--hover);}
+.sb-user img {width:32px; height:32px; border-radius:50%; border:2px solid #333;}
+.sb-user-info {display:flex; flex-direction:column; gap:1px;}
+.sb-user-name {font-size:13px; font-weight:600; color:var(--t); line-height:1;}
+.sb-user-role {font-size:9px; font-weight:600; color:var(--t3); letter-spacing:0.1em; text-transform:uppercase;}
+
+/* Nav buttons */
+.sb-nav-item {display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:6px; cursor:pointer; transition: background 0.15s; margin:1px 0;}
+.sb-nav-item:hover {background: var(--hover);}
+.sb-nav-item.active {background: var(--active); border-left:2px solid var(--accent); padding-left:8px;}
+.sb-nav-item span.icon {font-size:14px; width:18px; text-align:center; color:var(--t2);}
+.sb-nav-item.active span.icon {color:var(--accent);}
+.sb-nav-item span.label {font-size:11px; font-weight:600; letter-spacing:0.06em; color:var(--t2); text-transform:uppercase;}
+.sb-nav-item.active span.label {color:var(--t);}
+
+/* Sidebar divider */
+.sb-divider {height:1px; background:var(--line); margin:10px 0;}
+
+/* Sidebar section header */
+.sb-section-title {font-size:9px; font-weight:700; letter-spacing:0.14em; color:var(--t3); text-transform:uppercase; padding:4px 8px; margin-bottom:4px;}
+
+/* History items */
+.sb-history-item {display:flex; align-items:center; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer; transition: background 0.15s; margin:1px 0;}
+.sb-history-item:hover {background: var(--hover);}
+.sb-history-item span.history-icon {font-size:12px; color:var(--t3);}
+.sb-history-item span.history-text {font-size:11px; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;}
+.sb-history-item span.history-time {font-size:9px; color:var(--t3); white-space:nowrap;}
+
+/* Sidebar footer */
+.sb-footer {margin-top:auto; padding:8px; border-top:1px solid var(--line);}
+.sb-footer-text {font-size:9px; color:var(--t3); letter-spacing:0.08em;}
+
+/* Main content */
 .block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px;}
 h1, h2, h3 {letter-spacing:-0.03em; color:var(--t);}
 .bar-label {font-size:9px; letter-spacing:0.16em; color:var(--t2); font-weight:700; text-transform:uppercase;}
@@ -33,6 +72,27 @@ h1, h2, h3 {letter-spacing:-0.03em; color:var(--t);}
 .source-card {background: var(--panel); border:1px solid var(--line); border-left:2px solid #E5E5E5; border-radius:6px; padding:8px 10px; margin:5px 0;}
 div[data-testid="stChatInput"] {background: var(--card); border:1px solid var(--line);}
 hr {margin: 10px 0; border-color: var(--line);}
+
+/* Sidebar nav buttons */
+div[data-testid="stSidebar"] button[kind="secondary"] {
+    background: transparent;
+    border: 1px solid transparent;
+    text-align: left;
+    padding: 8px 10px;
+    border-radius: 6px;
+    transition: background 0.15s;
+    color: var(--t2);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+}
+div[data-testid="stSidebar"] button[kind="secondary"]:hover {
+    background: var(--hover);
+    border-color: var(--line2);
+}
+div[data-testid="stSidebar"] button[kind="secondary"]:disabled {
+    opacity: 0.4;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,25 +124,73 @@ for p in docs[:6]:
 while len(file_rows) < 6:
     file_rows.append((f"FILE {len(file_rows)+1}", random.randint(30,70)))
 
-# ---------- SIDEBAR compact ----------
+# ---------- SIDEBAR ----------
 with st.sidebar:
+    # User badge
     st.markdown("""
-    <div style="display:flex; align-items:center; gap:9px; padding:6px 4px 12px 4px;">
-        <img src="https://i.pravatar.cc/100?img=15" style="width:28px;height:28px;border-radius:50%;">
-        <span style="font-size:12px; font-weight:600; color:#F5F5F5;">Ali Sayed</span>
+    <div class="sb-user">
+        <img src="https://i.pravatar.cc/100?img=15" alt="avatar">
+        <div class="sb-user-info">
+            <span class="sb-user-name">Ali Sayed</span>
+            <span class="sb-user-role">Free Plan</span>
+        </div>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown('<div style="height:1px; background:#242424; margin:4px -10px 8px -10px;"></div>', unsafe_allow_html=True)
-    navs = [("DASHBOARD","⊞"),("MEMBERS","◐"),("DATABASE","⧉"),("STATISTICS","▅"),("SETTINGS","⚙")]
+
+    st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
+
+    # Navigation
+    navs = [("DASHBOARD","🏠"),("DATABASE","📁"),("STATISTICS","📊"),("SETTINGS","⚙️"),("MEMBERS","👥")]
     for key, icon in navs:
+        disabled = key == "MEMBERS"
         label = f"{icon}  {key}"
-        # members disabled hint
-        disabled = key=="MEMBERS"
-        if st.button(label, key=f"nav_{key}", use_container_width=True, disabled=disabled, help="Members — coming soon" if disabled else ""):
-            if not disabled:
+        if disabled:
+            st.button(label, key=f"nav_{key}", use_container_width=True, disabled=True, help="Coming soon")
+        else:
+            if st.button(label, key=f"nav_{key}", use_container_width=True):
                 st.session_state.page = key
                 st.rerun()
-    st.caption(f"● {st.session_state.page}  •  {len(docs)} files")
+
+    st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
+
+    # Chat history section
+    st.markdown('<div class="sb-section-title">Recent Chats</div>', unsafe_allow_html=True)
+
+    # Generate sample history from session messages (in real app, this comes from cloud/local storage)
+    if st.session_state.messages:
+        user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
+        history_items = []
+        for msg in user_msgs[:5]:
+            text = msg["content"][:28] + ("..." if len(msg["content"]) > 28 else "")
+            history_items.append((text, "just now"))
+        for i, (text, time) in enumerate(history_items):
+            st.markdown(f"""
+            <div class="sb-history-item">
+                <span class="history-icon">💬</span>
+                <span class="history-text">{text}</span>
+                <span class="history-time">{time}</span>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="sb-history-item" style="opacity:0.5;">
+            <span class="history-icon">💬</span>
+            <span class="history-text">No chats yet</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if st.session_state.messages:
+        if st.button("View all chats", key="view_all_chats"):
+            pass  # Future: open full history modal
+
+    st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
+
+    # Footer
+    st.markdown(f"""
+    <div class="sb-footer">
+        <span class="sb-footer-text">📁 {len(docs)} files • {st.session_state.page}</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ---------- HEADER: compact like ref ----------
 h1, h2 = st.columns([2.8,1.1])
