@@ -85,7 +85,7 @@ def get_llm_provider() -> LLMProvider:
 
 SYSTEM_PROMPT = """You are a helpful study assistant. Answer questions based ONLY on the provided context from course materials.
 If the context doesn't contain the answer, say "I couldn't find that information in your course materials."
-Always cite sources using [source: chunk_id] format after relevant statements.
+Do not include source citations in your answer text. Sources are displayed separately by the UI.
 Be concise but thorough."""
 
 
