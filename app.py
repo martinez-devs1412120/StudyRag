@@ -7,6 +7,8 @@ import random
 from src.rag.pipeline import RAGPipeline
 from src.rag.ingestion import extract_text, clean_text
 from src.rag.chunking import chunk_with_metadata
+from src.rag.auth import get_user, is_signed_in, sign_in_mock, sign_in_google, handle_oauth_callback, sign_out
+from src.rag.history import save_record, load_history
 
 st.set_page_config(page_title="StudyRAG", page_icon="◼", layout="wide")
 
@@ -101,6 +103,12 @@ def get_pipeline():
     return RAGPipeline()
 pipeline = get_pipeline()
 
+# handle OAuth return (?code=) before UI
+try:
+    handle_oauth_callback()
+except Exception:
+    pass
+
 if "page" not in st.session_state:
     st.session_state.page = "DASHBOARD"
 if "messages" not in st.session_state:
@@ -126,16 +134,50 @@ while len(file_rows) < 6:
 
 # ---------- SIDEBAR ----------
 with st.sidebar:
-    # User badge
-    st.markdown("""
-    <div class="sb-user">
-        <img src="https://i.pravatar.cc/100?img=15" alt="avatar">
-        <div class="sb-user-info">
-            <span class="sb-user-name">Ali Sayed</span>
-            <span class="sb-user-role">Free Plan</span>
+    # User badge — dynamic Gmail auth (optional for history)
+    user = get_user()
+    if is_signed_in():
+        st.markdown(f"""
+        <div class="sb-user">
+            <img src="{user.get('avatar','https://i.pravatar.cc/100?img=15')}" alt="avatar">
+            <div class="sb-user-info">
+                <span class="sb-user-name">{user.get('name','User')}</span>
+                <span class="sb-user-role">{user.get('email','')}</span>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        if st.button("Sign out", key="signout", use_container_width=True):
+            sign_out(); st.rerun()
+        # Saved history count
+        try:
+            hist = load_history(user["email"], limit=5)
+            if hist:
+                st.caption(f"📚 {len(hist)} saved chats")
+        except Exception:
+            pass
+    else:
+        st.markdown("""
+        <div class="sb-user">
+            <img src="https://i.pravatar.cc/100?img=15" alt="avatar">
+            <div class="sb-user-info">
+                <span class="sb-user-name">Guest</span>
+                <span class="sb-user-role">Sign in to save history</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        # Gmail demo + Google OAuth
+        with st.expander("🔐 Save history — Sign in with Gmail", expanded=False):
+            st.caption("Anonymous works. Sign in to save chats per Gmail (local or Supabase).")
+            gmail = st.text_input("Gmail", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
+            if st.button("Sign in (demo Gmail)", use_container_width=True):
+                ok, msg = sign_in_mock(gmail)
+                if ok: st.success(msg); st.rerun()
+                else: st.error(msg)
+            st.divider()
+            if st.button("Sign in with Google (OAuth)", use_container_width=True, help="Requires SUPABASE_URL/KEY + Google OAuth setup"):
+                url, err = sign_in_google()
+                if err: st.info(err)
+                elif url: st.markdown(f"[Continue to Google]({url})")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
@@ -153,35 +195,34 @@ with st.sidebar:
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
-    # Chat history section
+    # Chat history — saved per Gmail if signed in, else session only
     st.markdown('<div class="sb-section-title">Recent Chats</div>', unsafe_allow_html=True)
-
-    # Generate sample history from session messages (in real app, this comes from cloud/local storage)
-    if st.session_state.messages:
-        user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
-        history_items = []
-        for msg in user_msgs[:5]:
-            text = msg["content"][:28] + ("..." if len(msg["content"]) > 28 else "")
-            history_items.append((text, "just now"))
-        for i, (text, time) in enumerate(history_items):
-            st.markdown(f"""
-            <div class="sb-history-item">
-                <span class="history-icon">💬</span>
-                <span class="history-text">{text}</span>
-                <span class="history-time">{time}</span>
-            </div>
-            """, unsafe_allow_html=True)
+    if is_signed_in():
+        user = get_user()
+        saved = load_history(user["email"], limit=5)
+        if saved:
+            for rec in saved[-5:]:
+                q = rec["question"][:28] + ("..." if len(rec["question"]) > 28 else "")
+                # time ago simple
+                ts = rec.get("ts","")[:10] if rec.get("ts") else "saved"
+                if st.button(f"💬 {q}", key=f"hist_{q}_{ts}", use_container_width=True, help=rec["question"]):
+                    st.session_state.messages.append({"role":"user","content":rec["question"]})
+                    st.session_state.messages.append({"role":"assistant","content":rec["answer"],"sources":rec.get("sources",[])})
+                    st.session_state.page = "DASHBOARD"; st.rerun()
+        else:
+            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">💬</span><span class="history-text">No saved chats yet</span></div>""", unsafe_allow_html=True)
+        if st.button("Clear saved history", key="clear_saved"):
+            from src.rag.history import clear_history as ch
+            ch(user["email"]); st.success("Cleared"); st.rerun()
     else:
-        st.markdown("""
-        <div class="sb-history-item" style="opacity:0.5;">
-            <span class="history-icon">💬</span>
-            <span class="history-text">No chats yet</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-    if st.session_state.messages:
-        if st.button("View all chats", key="view_all_chats"):
-            pass  # Future: open full history modal
+        if st.session_state.messages:
+            user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
+            for msg in user_msgs[:5]:
+                text = msg["content"][:28] + ("..." if len(msg["content"]) > 28 else "")
+                st.markdown(f"""<div class="sb-history-item"><span class="history-icon">💬</span><span class="history-text">{text}</span><span class="history-time">session</span></div>""", unsafe_allow_html=True)
+            st.caption("Sign in to persist")
+        else:
+            st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">💬</span><span class="history-text">No chats yet — sign in to save</span></div>""", unsafe_allow_html=True)
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
@@ -257,6 +298,9 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
                 try:
                     r=pipeline.query(q)
                     st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
+                    if is_signed_in():
+                        try: save_record(get_user()["email"], q, r["answer"], r["sources"])
+                        except Exception: pass
                 except Exception as e:
                     st.session_state.messages.append({"role":"assistant","content":f"⚠️ {e}","sources":[]})
                 st.rerun()
@@ -280,6 +324,9 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
             try:
                 r=pipeline.query(prompt)
                 st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
+                if is_signed_in():
+                    try: save_record(get_user()["email"], prompt, r["answer"], r["sources"])
+                    except Exception: pass
             except Exception as e:
                 st.session_state.messages.append({"role":"assistant","content":f"⚠️ {e}","sources":[]})
         st.rerun()
