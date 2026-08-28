@@ -128,6 +128,46 @@ div[data-testid="stSidebar"] input[type="password"] {
 div[data-testid="stSidebar"] input:focus {
     border-color: var(--t3);
 }
+
+/* --- Responsive: mobile / small screens --- */
+@media (max-width: 768px) {
+    section[data-testid="stSidebar"] {
+        min-width: 100vw !important;
+        max-width: 100vw !important;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 999;
+        height: 100vh;
+    }
+    section[data-testid="stSidebar"] .block-container {
+        padding: 20px 16px;
+    }
+    .block-container {
+        padding: 12px 10px !important;
+        max-width: 100% !important;
+    }
+    .metric-card {
+        padding: 10px 8px;
+    }
+    .chat-user {max-width: 85%; font-size: 12px;}
+    .chat-ai {max-width: 90%; font-size: 12px;}
+    h1 {font-size: 16px !important;}
+    .big-number {font-size: 24px !important;}
+}
+
+@media (max-width: 480px) {
+    .block-container {
+        padding: 8px 6px !important;
+    }
+    .metric-card {
+        padding: 8px 6px;
+    }
+    .chat-user {max-width: 90%; font-size: 11px; padding: 7px 9px;}
+    .chat-ai {max-width: 95%; font-size: 11px; padding: 8px 10px;}
+    .welcome-title {font-size: 15px !important;}
+    .bar-label {font-size: 8px !important;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -146,6 +186,11 @@ if "page" not in st.session_state:
     st.session_state.page = "DASHBOARD"
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+import re
+def strip_citations(text):
+    """Remove inline [Source: ...] / [source: ...] patterns from answer text."""
+    return re.sub(r'\[Source:.*?Chunk:.*?\]', '', text).strip()
 
 def list_docs():
     d = Path("data/documents")
@@ -200,15 +245,27 @@ with st.sidebar:
         st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
         st.markdown("""
         <div class="sb-auth-card">
-            <div class="sb-auth-title">Sign in with Gmail</div>
-            <div class="sb-auth-sub">Anonymous usage works. Sign in to persist your chat history across sessions.</div>
+            <div class="sb-auth-title">Save history</div>
+            <div class="sb-auth-sub">Anonymous works. Demo Gmail saves locally; Google (verified) saves to Firestore and prevents spoofing.</div>
         </div>
         """, unsafe_allow_html=True)
         gmail = st.text_input("Email", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
-        if st.button("Sign in", use_container_width=True, key="btn_signin"):
+        if st.button("Sign in (demo Gmail — not verified)", use_container_width=True, key="btn_signin", help="Demo: anyone can type any Gmail. Use Google below for real verification."):
             ok, msg = sign_in_mock(gmail)
-            if ok: st.success(msg); st.rerun()
+            if ok: st.success(msg + " — ⚠️ demo, spoofable"); st.rerun()
             else: st.error(msg)
+        if st.button("Sign in with Google (verified)", use_container_width=True, key="btn_google", help="Real Google verification via Supabase/Firebase"):
+            try:
+                from src.rag.auth import sign_in_google as supa_google
+                url, err = supa_google()
+                if url:
+                    st.link_button("Continue to Google (Supabase)", url)
+                elif err and "Supabase not configured" not in err:
+                    st.error(err)
+                else:
+                    st.info("Supabase not configured. For Firebase Google: set FIREBASE_* in .env/Render and enable Google in Firebase Console → Authentication. Demo above works now.")
+            except Exception as e:
+                st.info(f"Configure Firebase/Supabase for verified Google: {e}")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
@@ -339,7 +396,8 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
         if m["role"]=="user":
             st.markdown(f'<div style="display:flex; justify-content:flex-end; margin:6px 0;"><div class="chat-user">{m["content"]}</div></div>', unsafe_allow_html=True)
         else:
-            st.markdown(f'<div style="display:flex; justify-content:flex-start; margin:6px 0;"><div class="chat-ai">{m["content"]}</div></div>', unsafe_allow_html=True)
+            clean_answer = strip_citations(m["content"])
+            st.markdown(f'<div style="display:flex; justify-content:flex-start; margin:6px 0;"><div class="chat-ai">{clean_answer}</div></div>', unsafe_allow_html=True)
             if m.get("sources"):
                 with st.expander(f"{len(m['sources'])} sources", expanded=False):
                     for s in m["sources"]:
