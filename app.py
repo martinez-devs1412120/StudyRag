@@ -106,6 +106,21 @@ h1, h2, h3 {letter-spacing:-0.03em; color:var(--t);}
 div[data-testid="stChatInput"] {background: var(--card); border:1px solid var(--line);}
 hr {margin: 10px 0; border-color: var(--line);}
 
+/* Primary button — white bg with dark text for visibility (Ingest) */
+button[kind="primary"] {
+    background: #FFFFFF !important;
+    color: #0E0E0E !important;
+    border: 1px solid #FFFFFF !important;
+}
+button[kind="primary"] p {
+    color: #0E0E0E !important;
+}
+button[kind="primary"]:hover {
+    background: #E5E5E5 !important;
+    border-color: #E5E5E5 !important;
+    color: #0E0E0E !important;
+}
+
 /* Sidebar nav buttons */
 div[data-testid="stSidebar"] button[kind="secondary"] {
     background: transparent;
