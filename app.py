@@ -7,6 +7,7 @@ from src.rag.chunking import chunk_with_metadata
 from src.rag.auth import get_user, is_signed_in, sign_in_mock, sign_in_google, handle_oauth_callback, sign_out
 from src.rag.history import save_record, load_history
 import re
+import os, json
 
 st.set_page_config(page_title="StudyRAG", page_icon="◼", layout="wide")
 
@@ -175,6 +176,25 @@ try:
     handle_oauth_callback()
 except Exception:
     pass
+# Firebase verified Gmail via ?verified_email (from JS popup, verified via id_token if available)
+if "verified_email" in st.query_params:
+    try:
+        email = st.query_params["verified_email"]
+        token = st.query_params.get("id_token")
+        if token and os.getenv("FIREBASE_PROJECT_ID"):
+            try:
+                from src.rag.auth_firebase import init_firebase as _init
+                import firebase_admin.auth
+                _init()
+                decoded = firebase_admin.auth.verify_id_token(token)
+                email = decoded.get("email", email)
+            except Exception:
+                pass
+        if email and email.lower().endswith("@gmail.com"):
+            st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "google-verified"}
+            st.query_params.clear()
+    except Exception:
+        pass
 
 if "page" not in st.session_state:
     st.session_state.page = "DASHBOARD"
@@ -236,20 +256,60 @@ with st.sidebar:
         gmail = st.text_input("Email", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
         if st.button("Sign in (demo Gmail — not verified)", use_container_width=True, key="btn_signin", help="Demo: anyone can type any Gmail. Use Google below for real verification."):
             ok, msg = sign_in_mock(gmail)
-            if ok: st.success(msg); st.rerun()
+            if ok: st.success(msg + " — ⚠️ demo, spoofable"); st.rerun()
             else: st.error(msg)
-        if st.button("Sign in with Google (verified)", use_container_width=True, key="btn_google", help="Real Google verification via Supabase/Firebase"):
+        # Real Google verification via Firebase Web SDK (if FIREBASE_WEB_CONFIG set)
+        fb_web = os.getenv("FIREBASE_WEB_CONFIG")
+        if not fb_web:
+            # try from firebaseConfig file if pasted as JSON env, else show setup hint
+            st.caption("Verified Google needs Firebase Web Config. Paste `firebaseConfig` JSON to `FIREBASE_WEB_CONFIG` in .env/Render and enable Google in Firebase Console → Authentication.")
+            # fallback Supabase button
+            if st.button("Sign in with Google (Supabase fallback)", use_container_width=True, key="btn_google_supa"):
+                try:
+                    from src.rag.auth import sign_in_google as supa_google
+                    url, err = supa_google()
+                    if url: st.link_button("Continue to Google (Supabase)", url)
+                    elif err: st.info(err)
+                except Exception as e:
+                    st.info(str(e))
+        else:
             try:
-                from src.rag.auth import sign_in_google as supa_google
-                url, err = supa_google()
-                if url:
-                    st.link_button("Continue to Google (Supabase)", url)
-                elif err and "Supabase not configured" not in err:
-                    st.error(err)
-                else:
-                    st.info("Supabase not configured. For Firebase Google: set FIREBASE_* in .env/Render and enable Google in Firebase Console → Authentication. Demo above works now.")
+                import streamlit.components.v1 as components
+                # fb_web may be JSON string
+                fb_json = fb_web.strip()
+                # ensure valid JSON
+                json.loads(fb_json)
+                components.html(f"""
+                <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+                <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+                <div style="text-align:center; margin:8px 0;">
+                  <button id="googleBtn" style="width:100%; padding:10px; background:#FFFFFF; color:#0E0E0E; border:1px solid #E5E7EB; border-radius:8px; font-weight:600; cursor:pointer;">Sign in with Google (verified)</button>
+                  <div id="status" style="font-size:11px; color:#9A9A9A; margin-top:6px;"></div>
+                </div>
+                <script>
+                  const firebaseConfig = {fb_json};
+                  try {{ if (!firebase.apps.length) firebase.initializeApp(firebaseConfig); }} catch(e) {{}}
+                  document.getElementById('googleBtn').onclick = async () => {{
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    document.getElementById('status').innerText = 'Opening Google...';
+                    try {{
+                      const result = await firebase.auth().signInWithPopup(provider);
+                      const user = result.user;
+                      const token = await user.getIdToken();
+                      const email = user.email;
+                      document.getElementById('status').innerText = 'Verified ' + email + ', reloading...';
+                      const url = new URL(window.parent.location.href);
+                      url.searchParams.set('verified_email', email);
+                      url.searchParams.set('id_token', token);
+                      window.parent.location.href = url.toString();
+                    }} catch(e) {{
+                      document.getElementById('status').innerText = 'Error: ' + e.message;
+                    }}
+                  }};
+                </script>
+                """, height=90)
             except Exception as e:
-                st.info(f"Configure Firebase/Supabase for verified Google: {e}")
+                st.error(f"Firebase Web Config invalid JSON: {e}")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
