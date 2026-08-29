@@ -1,14 +1,12 @@
-"""StudyRAG — Compact dashboard (preserve ref + hierarchy/spacing/typography)"""
+"""StudyRAG — Study assistant dashboard"""
 import streamlit as st
 from pathlib import Path
-import pandas as pd
-import altair as alt
-import random
 from src.rag.pipeline import RAGPipeline
 from src.rag.ingestion import extract_text, clean_text
 from src.rag.chunking import chunk_with_metadata
 from src.rag.auth import get_user, is_signed_in, sign_in_mock, sign_in_google, handle_oauth_callback, sign_out
 from src.rag.history import save_record, load_history
+import re
 
 st.set_page_config(page_title="StudyRAG", page_icon="◼", layout="wide")
 
@@ -25,23 +23,24 @@ section[data-testid="stSidebar"] {background: var(--panel); border-right:1px sol
 section[data-testid="stSidebar"] .block-container {padding: 14px 10px; height: 100vh; overflow-y: auto; display: flex; flex-direction: column;}
 section[data-testid="stSidebar"] [data-testid="stMarkdown"] {margin: 0;}
 
-/* Sidebar collapsed state — responsive */
-section[data-testid="stSidebar"][aria-expanded="false"] {min-width: 60px; max-width: 60px;}
+/* Sidebar collapsed state */
+section[data-testid="stSidebar"][aria-expanded="false"] {min-width: 54px; max-width: 54px;}
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-user-info,
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-section-title,
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-history-item span.history-text,
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-history-item span.history-time,
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-footer-text,
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-auth-card,
 section[data-testid="stSidebar"][aria-expanded="false"] .sb-divider + .sb-section-title {display: none;}
-section[data-testid="stSidebar"][aria-expanded="false"] .sb-user {justify-content: center; padding: 10px 4px;}
-section[data-testid="stSidebar"][aria-expanded="false"] .sb-user img {width: 28px; height: 28px;}
-section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"] {text-align: center; padding: 8px 4px; font-size: 0; min-height: 36px;}
-section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"]::before {content: attr(aria-label); font-size: 11px;}
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-user {justify-content: center; padding: 8px 2px;}
+section[data-testid="stSidebar"][aria-expanded="false"] .sb-user svg {width: 26px; height: 26px;}
+section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"] {text-align: center; padding: 6px 2px; font-size: 0; min-height: 32px;}
+section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"]::before {content: attr(aria-label); font-size: 10px;}
 
 /* Sidebar user badge */
 .sb-user {display:flex; align-items:center; gap:10px; padding:10px 8px; border-radius:8px; margin-bottom:4px; transition: background 0.15s;}
 .sb-user:hover {background: var(--hover);}
-.sb-user img {width:32px; height:32px; border-radius:50%; border:2px solid #333;}
+.sb-user svg {width:32px; height:32px; border-radius:50%; background:#2A2A2A; padding:4px; flex-shrink:0;}
 .sb-user-info {display:flex; flex-direction:column; gap:1px; min-width:0;}
 .sb-user-name {font-size:13px; font-weight:600; color:var(--t); line-height:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .sb-user-role {font-size:9px; font-weight:600; color:var(--t3); letter-spacing:0.1em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -78,7 +77,10 @@ section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"]
 .sb-auth-sub {font-size:10px; color:var(--t3); line-height:1.5; margin-bottom:10px;}
 
 /* Main content */
-.block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px;}
+.block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px; width:100%; transition: max-width 0.22s ease;}
+/* When sidebar collapsed, expand main container to full width */
+section[data-testid="stSidebar"][aria-expanded="false"] ~ section .block-container,
+div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .block-container {max-width: 1100px; width: 95%;}
 h1, h2, h3 {letter-spacing:-0.03em; color:var(--t);}
 .bar-label {font-size:9px; letter-spacing:0.16em; color:var(--t2); font-weight:700; text-transform:uppercase;}
 .welcome-sub {font-size:9px; letter-spacing:0.18em; color:var(--t2); font-weight:700; text-transform:uppercase; line-height:1;}
@@ -147,26 +149,18 @@ div[data-testid="stSidebar"] input:focus {
         padding: 12px 10px !important;
         max-width: 100% !important;
     }
-    .metric-card {
-        padding: 10px 8px;
-    }
     .chat-user {max-width: 85%; font-size: 12px;}
     .chat-ai {max-width: 90%; font-size: 12px;}
     h1 {font-size: 16px !important;}
-    .big-number {font-size: 24px !important;}
 }
 
 @media (max-width: 480px) {
     .block-container {
         padding: 8px 6px !important;
-    }
-    .metric-card {
-        padding: 8px 6px;
+        max-width: 100% !important;
     }
     .chat-user {max-width: 90%; font-size: 11px; padding: 7px 9px;}
     .chat-ai {max-width: 95%; font-size: 11px; padding: 8px 10px;}
-    .welcome-title {font-size: 15px !important;}
-    .bar-label {font-size: 8px !important;}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -187,7 +181,6 @@ if "page" not in st.session_state:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-import re
 def strip_citations(text):
     """Remove inline [Source: ...] / [source: ...] patterns from answer text."""
     return re.sub(r'\[Source:.*?Chunk:.*?\]', '', text).strip()
@@ -200,24 +193,15 @@ def list_docs():
 docs = list_docs()
 stats = pipeline.stats()
 
-random.seed(42)
-monthly_vals = [random.randint(18,46)+(10 if i%6==0 else 0) for i in range(28)]
-monthly_df = pd.DataFrame({"d": range(28), "v": monthly_vals})
-file_rows = []
-for p in docs[:6]:
-    pct = (abs(hash(p.name)) % 55) + 35
-    file_rows.append((p.stem[:14].upper(), pct))
-while len(file_rows) < 6:
-    file_rows.append((f"FILE {len(file_rows)+1}", random.randint(30,70)))
-
 # ---------- SIDEBAR ----------
 with st.sidebar:
     # User badge
     user = get_user()
+    PERSON_SVG = '<svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="18" fill="#2A2A2A"/><circle cx="18" cy="14" r="6" fill="#555"/><ellipse cx="18" cy="30" rx="11" ry="9" fill="#555"/></svg>'
     if is_signed_in():
         st.markdown(f"""
         <div class="sb-user">
-            <img src="{user.get('avatar','https://i.pravatar.cc/100?img=15')}" alt="avatar">
+            {PERSON_SVG}
             <div class="sb-user-info">
                 <span class="sb-user-name">{user.get('name','User')}</span>
                 <span class="sb-user-role">{user.get('email','')}</span>
@@ -233,9 +217,9 @@ with st.sidebar:
         except Exception:
             pass
     else:
-        st.markdown("""
+        st.markdown(f"""
         <div class="sb-user">
-            <img src="https://i.pravatar.cc/100?img=15" alt="avatar">
+            {PERSON_SVG}
             <div class="sb-user-info">
                 <span class="sb-user-name">Guest</span>
                 <span class="sb-user-role">Sign in to save history</span>
@@ -252,7 +236,7 @@ with st.sidebar:
         gmail = st.text_input("Email", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
         if st.button("Sign in (demo Gmail — not verified)", use_container_width=True, key="btn_signin", help="Demo: anyone can type any Gmail. Use Google below for real verification."):
             ok, msg = sign_in_mock(gmail)
-            if ok: st.success(msg + " — ⚠️ demo, spoofable"); st.rerun()
+            if ok: st.success(msg); st.rerun()
             else: st.error(msg)
         if st.button("Sign in with Google (verified)", use_container_width=True, key="btn_google", help="Real Google verification via Supabase/Firebase"):
             try:
@@ -318,66 +302,43 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# ---------- HEADER: compact like ref ----------
-h1, h2 = st.columns([2.8,1.1])
-with h1:
-    st.markdown('<div class="bar-label">Support Team</div>', unsafe_allow_html=True)
-    st.markdown('<div class="welcome-title">Welcome Ali!</div>', unsafe_allow_html=True)
-with h2:
-    st.markdown(f'<div style="text-align:right;"><div class="bar-label">Total Issues</div><div class="big-number">{stats["document_count"] or 451}</div></div>', unsafe_allow_html=True)
+# ---------- HEADER ----------
+st.markdown('<div class="welcome-title">Welcome</div>', unsafe_allow_html=True)
+st.markdown('<div style="height:12px"></div>', unsafe_allow_html=True)
 
-st.markdown('<div style="height:10px"></div>', unsafe_allow_html=True)
-
-# Pages
+# ---------- DASHBOARD PAGE ----------
 if st.session_state.page in ("DASHBOARD","MEMBERS"):
-    # MONTHLY STATS bar — compact 90px
-    st.markdown('<div style="display:flex; justify-content:space-between; align-items:center;"><span class="bar-label">Monthly Stats</span><span style="background:#FFFFFF; color:#0E0E0E; font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px;">+9.87%</span></div>', unsafe_allow_html=True)
+    # Question guide
+    st.markdown('<div class="bar-label">How it works</div>', unsafe_allow_html=True)
     st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
-    chart = alt.Chart(monthly_df).mark_bar(color="#F0F0F0", size=5, cornerRadiusTopLeft=1, cornerRadiusTopRight=1).encode(
-        x=alt.X('d:O', axis=None), y=alt.Y('v:Q', axis=None, scale=alt.Scale(domain=[0,60])), tooltip=[]
-    ).properties(height=88, background="#0E0E0E")
-    # subtle grid lines like ref: fake via rule?
-    st.altair_chart(chart, use_container_width=True)
+    st.markdown("""
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px;">
+        <div class="metric-card">
+            <div style="font-size:18px; font-weight:700; color:var(--t); line-height:1;">01</div>
+            <div style="font-size:11px; font-weight:600; color:var(--t2); margin-top:6px;">Upload materials</div>
+            <div style="font-size:10px; color:var(--t3); margin-top:3px; line-height:1.4;">Add PDFs or PPTX files in the Database section</div>
+        </div>
+        <div class="metric-card">
+            <div style="font-size:18px; font-weight:700; color:var(--t); line-height:1;">02</div>
+            <div style="font-size:11px; font-weight:600; color:var(--t2); margin-top:6px;">Ask questions</div>
+            <div style="font-size:10px; color:var(--t3); margin-top:3px; line-height:1.4;">Type any question about your uploaded materials below</div>
+        </div>
+        <div class="metric-card">
+            <div style="font-size:18px; font-weight:700; color:var(--t); line-height:1;">03</div>
+            <div style="font-size:11px; font-weight:600; color:var(--t2); margin-top:6px;">Get answers</div>
+            <div style="font-size:10px; color:var(--t3); margin-top:3px; line-height:1.4;">Receive grounded responses with source citations</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # 3 metrics compact
-    c1,c2,c3 = st.columns(3)
-    for col, title, val in zip([c1,c2,c3], ["Total Growth","Total Gross","Net Popularity"], ["36.87","36.87","36.87"]):
-        with col:
-            st.markdown(f'''
-            <div class="metric-card">
-                <div class="bar-label">{title}</div>
-                <div style="height:22px; margin:4px 0;"></div>
-                <div style="font-size:13px; font-weight:700; color:#F5F5F5; line-height:1;">{val}</div>
-                <div style="font-size:9px; color:#6B6B6B; margin-top:2px;">19:02 Sunday, 24 Dec 2018</div>
-            </div>
-            ''', unsafe_allow_html=True)
-            spark = pd.DataFrame({"x":range(14), "y": [36 + random.uniform(-0.7,0.7) + 0.15*(i%3) for i in range(14)]})
-            line = alt.Chart(spark).mark_line(color="#E5E5E5", strokeWidth=1.2, interpolate="monotone").encode(
-                x=alt.X('x:Q', axis=None), y=alt.Y('y:Q', axis=None, scale=alt.Scale(domain=[34.8,37.2]))
-            ).properties(height=22, background="transparent")
-            st.altair_chart(line, use_container_width=True)
+    st.markdown('<div style="height:16px"></div><hr>', unsafe_allow_html=True)
 
-    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-
-    # Bottom file bars — compact 2-col like ref
-    left, right = st.columns(2)
-    with left:
-        for name, pct in file_rows[:3]:
-            st.markdown(f'<div style="display:flex; justify-content:space-between;"><span style="font-size:9px; letter-spacing:0.12em; color:#9A9A9A; font-weight:700;">{name}</span><span style="font-size:9px; color:#6B6B6B;"></span></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="track"><div class="fill" style="width:{pct}%"></div></div><div style="height:8px"></div>', unsafe_allow_html=True)
-    with right:
-        for name, pct in file_rows[3:]:
-            st.markdown(f'<div style="display:flex; justify-content:space-between;"><span style="font-size:9px; letter-spacing:0.12em; color:#9A9A9A; font-weight:700;">{name}</span></div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="track"><div class="fill" style="width:{pct}%"></div></div><div style="height:8px"></div>', unsafe_allow_html=True)
-
-    st.markdown('<div style="height:6px"></div><hr>', unsafe_allow_html=True)
-
-    # Chat compact integrated
-    st.markdown('<div class="bar-label">Chat with your notes</div>', unsafe_allow_html=True)
+    # Chat
+    st.markdown('<div class="bar-label">Ask a question</div>', unsafe_allow_html=True)
     if not st.session_state.messages:
-        st.caption("Try: “what did the reviewer say about normalization?” — grounded with citations.")
+        st.caption("Type a question below or try one of these to get started.")
         ec1, ec2, ec3 = st.columns(3)
-        for c, q in zip([ec1,ec2,ec3], ["What is 1NF, 2NF, 3NF?","Reviewer on normalization?","Summarize DBMS notes"]):
+        for c, q in zip([ec1,ec2,ec3], ["Summarize these notes", "What are the key concepts?", "Explain the main topics"]):
             if c.button(q, use_container_width=True, key=f"ex_{q[:8]}"):
                 st.session_state.messages.append({"role":"user","content":q})
                 try:
@@ -390,7 +351,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
                     st.session_state.messages.append({"role":"assistant","content":f"Error: {e}","sources":[]})
                 st.rerun()
     else:
-        st.caption(f"{len([m for m in st.session_state.messages if m['role']=='user'])} questions • Groq {pipeline.cfg['GROQ_MODEL']}")
+        st.caption(f"{len([m for m in st.session_state.messages if m['role']=='user'])} questions")
 
     for m in st.session_state.messages:
         if m["role"]=="user":
@@ -439,8 +400,8 @@ elif st.session_state.page == "DATABASE":
         .drag-icon {font-size:28px; animation: float 1.8s ease-in-out infinite; display:inline-block;}
         </style>
         <div class="drag-box">
-            <div class="drag-icon">📄</div>
-            <div style="font-size:13px; font-weight:600; color:#F5F5F5; margin-top:8px;">Drag & drop PDFs / PPTX here</div>
+            <div class="drag-icon" style="width:28px; height:28px; margin:0 auto; background:#2A2A2A; border-radius:4px; display:flex; align-items:center; justify-content:center;"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 2 H10 L13 5 V13 H6 Z" fill="#3A3A3A" stroke="#555" stroke-width="0.8"/><path d="M10 2 V5 H13" fill="none" stroke="#555" stroke-width="0.8"/></svg></div>
+            <div style="font-size:13px; font-weight:600; color:#F5F5F5; margin-top:8px;">Drop PDFs or PPTX here</div>
             <div style="font-size:11px; color:#9A9A9A; margin-top:4px;">or click <b style="color:#F5F5F5;">Browse files</b> below • Limit 200MB per file</div>
             <div style="font-size:10px; color:#6B6B6B; margin-top:10px; letter-spacing:0.08em;">QUICK GUIDE: 1) Drop file → 2) Click Ingest → 3) Ask in Dashboard</div>
         </div>
@@ -453,15 +414,13 @@ elif st.session_state.page == "DATABASE":
         for f in up:
             out=d/f.name; out.write_bytes(f.getbuffer())
             t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=f.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); tot+=len(ch)
-        st.success(f"✅ {len(up)} file(s) → {tot} chunks indexed"); st.rerun()
+        st.success(f"{len(up)} file(s) ingested as {tot} chunks"); st.rerun()
 
 elif st.session_state.page == "STATISTICS":
     st.markdown('<div class="bar-label">Statistics</div>', unsafe_allow_html=True)
     k1,k2,k3 = st.columns(3)
     k1.metric("Chunks", stats["document_count"]); k2.metric("Files", len(docs)); k3.metric("Top-K", pipeline.cfg["TOP_K"])
-    chart2 = alt.Chart(monthly_df).mark_bar(color="#F0F0F0", size=5).encode(x=alt.X('d:O', axis=None), y=alt.Y('v:Q', axis=None)).properties(height=100, background="#0E0E0E")
-    st.altair_chart(chart2, use_container_width=True)
-    st.caption("TF-IDF • cosine • `src/rag/embeddings.py:7`")
+    st.caption("TF-IDF / cosine similarity")
 
 elif st.session_state.page == "SETTINGS":
     st.markdown('<div class="bar-label">Settings</div>', unsafe_allow_html=True)
@@ -470,5 +429,3 @@ elif st.session_state.page == "SETTINGS":
     if st.button("Test Groq"):
         try: r=pipeline.query("hello"); st.success(r["answer"][:300])
         except Exception as e: st.error(str(e))
-
-st.caption("Compact / neat spacing 8-12px / hierarchy 9/13/18/32 / Inter 400/600/700")
