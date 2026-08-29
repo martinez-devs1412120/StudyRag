@@ -289,25 +289,29 @@ with st.sidebar:
                 <script>
                   const firebaseConfig = {fb_json};
                   try {{ if (!firebase.apps.length) firebase.initializeApp(firebaseConfig); }} catch(e) {{}}
-                  document.getElementById('googleBtn').onclick = async () => {{
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    document.getElementById('status').innerText = 'Opening Google...';
-                    try {{
-                      const result = await firebase.auth().signInWithPopup(provider);
-                      const user = result.user;
-                      const token = await user.getIdToken();
-                      const email = user.email;
+                  // handle redirect result after Google returns
+                  firebase.auth().getRedirectResult().then(async (result) => {{
+                    if (result && result.user) {{
+                      const token = await result.user.getIdToken();
+                      const email = result.user.email;
                       document.getElementById('status').innerText = 'Verified ' + email + ', reloading...';
                       const url = new URL(window.parent.location.href);
                       url.searchParams.set('verified_email', email);
                       url.searchParams.set('id_token', token);
                       window.parent.location.href = url.toString();
+                    }}
+                  }}).catch(e => {{ document.getElementById('status').innerText = 'Error: ' + e.message; }});
+                  document.getElementById('googleBtn').onclick = async () => {{
+                    const provider = new firebase.auth.GoogleAuthProvider();
+                    document.getElementById('status').innerText = 'Redirecting to Google...';
+                    try {{
+                      await firebase.auth().signInWithRedirect(provider);
                     }} catch(e) {{
-                      document.getElementById('status').innerText = 'Error: ' + e.message;
+                      document.getElementById('status').innerText = 'Error: ' + e.message + ' — Also add https://studyrag-4xvz.onrender.com to Firebase → Authentication → Settings → Authorized domains';
                     }}
                   }};
                 </script>
-                """, height=90)
+                """, height=95)
             except Exception as e:
                 st.error(f"Firebase Web Config invalid JSON: {e}")
 
