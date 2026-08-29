@@ -258,62 +258,48 @@ with st.sidebar:
             ok, msg = sign_in_mock(gmail)
             if ok: st.success(msg + " — ⚠️ demo, spoofable"); st.rerun()
             else: st.error(msg)
-        # Real Google verification via Firebase Web SDK (if FIREBASE_WEB_CONFIG set)
-        fb_web = os.getenv("FIREBASE_WEB_CONFIG")
-        if not fb_web:
-            # try from firebaseConfig file if pasted as JSON env, else show setup hint
-            st.caption("Verified Google needs Firebase Web Config. Paste `firebaseConfig` JSON to `FIREBASE_WEB_CONFIG` in .env/Render and enable Google in Firebase Console → Authentication.")
-            # fallback Supabase button
-            if st.button("Sign in with Google (Supabase fallback)", use_container_width=True, key="btn_google_supa"):
-                try:
-                    from src.rag.auth import sign_in_google as supa_google
-                    url, err = supa_google()
-                    if url: st.link_button("Continue to Google (Supabase)", url)
-                    elif err: st.info(err)
-                except Exception as e:
-                    st.info(str(e))
+        # Real Google - server-side OAuth (works in iframe, no popup block)
+        google_id = os.getenv("GOOGLE_CLIENT_ID")
+        if not google_id:
+            st.caption("Verified Google needs `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` in Render → Environment. Get from console.cloud.google.com → APIs & Services → Credentials → OAuth client (Web) → add redirect `https://studyrag-4xvz.onrender.com` (+ `http://localhost:8501` for local). Demo Gmail above works now.")
         else:
-            try:
-                import streamlit.components.v1 as components
-                # fb_web may be JSON string
-                fb_json = fb_web.strip()
-                # ensure valid JSON
-                json.loads(fb_json)
-                components.html(f"""
-                <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-                <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-                <div style="text-align:center; margin:8px 0;">
-                  <button id="googleBtn" style="width:100%; padding:10px; background:#FFFFFF; color:#0E0E0E; border:1px solid #E5E7EB; border-radius:8px; font-weight:600; cursor:pointer;">Sign in with Google (verified)</button>
-                  <div id="status" style="font-size:11px; color:#9A9A9A; margin-top:6px;"></div>
-                </div>
-                <script>
-                  const firebaseConfig = {fb_json};
-                  try {{ if (!firebase.apps.length) firebase.initializeApp(firebaseConfig); }} catch(e) {{}}
-                  // handle redirect result after Google returns
-                  firebase.auth().getRedirectResult().then(async (result) => {{
-                    if (result && result.user) {{
-                      const token = await result.user.getIdToken();
-                      const email = result.user.email;
-                      document.getElementById('status').innerText = 'Verified ' + email + ', reloading...';
-                      const url = new URL(window.parent.location.href);
-                      url.searchParams.set('verified_email', email);
-                      url.searchParams.set('id_token', token);
-                      window.parent.location.href = url.toString();
-                    }}
-                  }}).catch(e => {{ document.getElementById('status').innerText = 'Error: ' + e.message; }});
-                  document.getElementById('googleBtn').onclick = async () => {{
-                    const provider = new firebase.auth.GoogleAuthProvider();
-                    document.getElementById('status').innerText = 'Redirecting to Google...';
-                    try {{
-                      await firebase.auth().signInWithRedirect(provider);
-                    }} catch(e) {{
-                      document.getElementById('status').innerText = 'Error: ' + e.message + ' — Also add https://studyrag-4xvz.onrender.com to Firebase → Authentication → Settings → Authorized domains';
-                    }}
-                  }};
-                </script>
-                """, height=95)
-            except Exception as e:
-                st.error(f"Firebase Web Config invalid JSON: {e}")
+            import urllib.parse
+            redirect_uri = os.getenv("APP_URL", "https://studyrag-4xvz.onrender.com")
+            params = {
+                "client_id": google_id,
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "access_type": "offline",
+                "prompt": "consent",
+            }
+            auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
+            st.link_button("Sign in with Google (verified)", auth_url, use_container_width=True, help="Verifies Gmail ownership — prevents spoofing, saves to Firestore")
+            # handle OAuth callback ?code=
+            if "code" in st.query_params:
+                code = st.query_params["code"]
+                try:
+                    import requests
+                    token_res = requests.post("https://oauth2.googleapis.com/token", data={
+                        "code": code,
+                        "client_id": google_id,
+                        "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
+                        "redirect_uri": redirect_uri,
+                        "grant_type": "authorization_code",
+                    }, timeout=10).json()
+                    id_token = token_res.get("id_token")
+                    if id_token:
+                        # decode JWT payload to get email (no verification for demo, but Google verified)
+                        import base64
+                        payload = id_token.split(".")[1] + "==="
+                        data = json.loads(base64.urlsafe_b64decode(payload))
+                        email = data.get("email","")
+                        if email.lower().endswith("@gmail.com"):
+                            st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "google-verified"}
+                            st.query_params.clear()
+                            st.success(f"Verified {email}"); st.rerun()
+                except Exception as e:
+                    st.error(f"Google verify failed: {e}")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
