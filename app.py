@@ -77,11 +77,21 @@ section[data-testid="stSidebar"][aria-expanded="false"] button[kind="secondary"]
 .sb-auth-title {font-size:12px; font-weight:700; color:var(--t); margin-bottom:6px; letter-spacing:0.02em;}
 .sb-auth-sub {font-size:10px; color:var(--t3); line-height:1.5; margin-bottom:10px;}
 
-/* Main content */
-.block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px; width:100%; transition: max-width 0.22s ease;}
-/* When sidebar collapsed, expand main container to full width */
-section[data-testid="stSidebar"][aria-expanded="false"] ~ section .block-container,
-div[data-testid="stAppViewContainer"]:has(section[data-testid="stSidebar"][aria-expanded="false"]) .block-container {max-width: 1100px; width: 95%;}
+/* Main content — keep 980px centered when sidebar open */
+.block-container {padding-top: 0.9rem; padding-bottom: 0.6rem; max-width: 980px !important; width:100% !important; transition: max-width 0.22s ease, width 0.22s ease; margin-left:auto !important; margin-right:auto !important;}
+section[data-testid="stMain"] {margin-left: 0 !important; transition: margin-left 0.22s ease;}
+/* When sidebar collapsed, stretch to nearly full viewport */
+section[data-testid="stSidebar"][aria-expanded="false"] ~ section[data-testid="stMain"] .block-container,
+section[data-testid="stSidebar"][aria-expanded="false"] ~ div .block-container,
+[data-testid="stSidebar"][aria-expanded="false"] ~ [data-testid="stMain"] .block-container,
+.stApp:has([data-testid="stSidebar"][aria-expanded="false"]) [data-testid="stMain"] .block-container,
+.stApp:has([data-testid="stSidebar"][aria-expanded="false"]) .block-container,
+body:has([data-testid="stSidebar"][aria-expanded="false"]) .block-container {max-width: 1280px !important; width: 96% !important; padding-left: 1rem !important; padding-right: 1rem !important;}
+section[data-testid="stSidebar"][aria-expanded="false"] ~ section[data-testid="stMain"],
+.stApp:has([data-testid="stSidebar"][aria-expanded="false"]) section[data-testid="stMain"] {margin-left: 0 !important; width: 100% !important;}
+/* Hide collapsed sidebar strip completely for true full-width */
+section[data-testid="stSidebar"][aria-expanded="false"] {min-width: 0 !important; max-width: 0 !important; width: 0 !important; overflow: hidden !important; border: none !important; padding: 0 !important;}
+section[data-testid="stSidebar"][aria-expanded="false"] > div {display:none !important;}
 h1, h2, h3 {letter-spacing:-0.03em; color:var(--t);}
 .bar-label {font-size:9px; letter-spacing:0.16em; color:var(--t2); font-weight:700; text-transform:uppercase;}
 .welcome-sub {font-size:9px; letter-spacing:0.18em; color:var(--t2); font-weight:700; text-transform:uppercase; line-height:1;}
