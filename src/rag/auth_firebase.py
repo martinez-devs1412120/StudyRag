@@ -1,9 +1,12 @@
 """Firebase Gmail auth helper (mock Gmail + optional Google OAuth placeholder)."""
 import os
 import json
+import logging
 import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 def _firebase_available():
     return bool(os.getenv("FIREBASE_PROJECT_ID") or os.getenv("FIREBASE_CREDENTIALS") or os.getenv("FIREBASE_CREDENTIALS_JSON"))
@@ -18,8 +21,32 @@ def sign_in_mock(email: str):
     email = email.strip().lower()
     if not email.endswith("@gmail.com"):
         return False, "Use a Gmail address (@gmail.com)"
-    st.session_state["user"] = {"email": email, "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "gmail-mock"}
+    st.session_state["user"] = {"email": email, "name": email.split("@")[0], "provider": "gmail-mock"}
     return True, f"Signed in as {email} (history will save to Firebase if configured, else local)"
+
+def verify_firebase_email(token):
+    """Verify a Firebase-issued id_token and return its email, or None.
+
+    Fails closed: missing credentials, invalid/expired token, or an
+    unverified email all return None. The caller must never trust an email
+    taken from a URL/query parameter without passing through here.
+    """
+    if not token:
+        return None
+    try:
+        import firebase_admin
+        import firebase_admin.auth
+        if not firebase_admin._apps:
+            if init_firebase() is None:
+                logger.error("Firebase credentials missing; cannot verify id_token")
+                return None
+        decoded = firebase_admin.auth.verify_id_token(token)
+        if not decoded.get("email_verified", False):
+            return None
+        return decoded.get("email")
+    except Exception:
+        logger.exception("Firebase id_token verification failed")
+        return None
 
 def sign_out():
     st.session_state.pop("user", None)

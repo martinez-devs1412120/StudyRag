@@ -1,9 +1,78 @@
 """Optional Gmail auth — Supabase Google OAuth with mock fallback for local demo."""
 import os
+import hmac
+import time
+import hashlib
+import logging
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# OAuth state tokens are valid for this long after issuance (login-CSRF window).
+OAUTH_STATE_TTL = 900
+
+
+def _oauth_secret() -> bytes:
+    secret = os.getenv("STUDYRAG_SECRET") or os.getenv("GOOGLE_CLIENT_SECRET") or ""
+    return secret.encode()
+
+
+def make_oauth_state():
+    """Stateless signed state for the OAuth redirect. None if no secret is configured."""
+    secret = _oauth_secret()
+    if not secret:
+        return None
+    ts = str(int(time.time()))
+    sig = hmac.new(secret, ts.encode(), hashlib.sha256).hexdigest()[:32]
+    return f"{ts}.{sig}"
+
+
+def verify_oauth_state(state) -> bool:
+    """Validate the signed OAuth state (HMAC + freshness). Fails closed on tampering."""
+    secret = _oauth_secret()
+    if not secret:
+        # Without a secret there is no working OAuth flow anyway (the token
+        # exchange needs GOOGLE_CLIENT_SECRET), so nothing to enforce.
+        return True
+    if not state or "." not in state:
+        return False
+    ts, sig = state.split(".", 1)
+    if not ts.isdigit():
+        return False
+    expected = hmac.new(secret, ts.encode(), hashlib.sha256).hexdigest()[:32]
+    if not hmac.compare_digest(sig, expected):
+        return False
+    return time.time() - int(ts) <= OAUTH_STATE_TTL
+
+
+def verify_google_id_token(token):
+    """Verify a Google-issued OIDC id_token: signature, audience, issuer, expiry.
+
+    Returns the email claim, or None on ANY failure. Fails closed — the token
+    payload is never trusted without a signature check.
+    """
+    if not token:
+        return None
+    client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not client_id:
+        logger.error("GOOGLE_CLIENT_ID not set; cannot verify id_token")
+        return None
+    try:
+        from google.oauth2 import id_token as google_id_token
+        from google.auth.transport import requests as google_requests
+
+        info = google_id_token.verify_oauth2_token(token, google_requests.Request(), client_id)
+    except Exception:
+        logger.exception("Google id_token verification failed")
+        return None
+    if info.get("iss") not in ("accounts.google.com", "https://accounts.google.com"):
+        return None
+    if not info.get("email_verified"):
+        return None
+    return info.get("email") or None
 
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
@@ -26,7 +95,7 @@ def sign_in_mock(email: str):
     email = email.strip().lower()
     if not email.endswith("@gmail.com"):
         return False, "Use a Gmail address (@gmail.com)"
-    st.session_state["user"] = {"email": email, "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "mock"}
+    st.session_state["user"] = {"email": email, "name": email.split("@")[0], "provider": "mock"}
     return True, "Signed in (demo)"
 
 def sign_in_google():

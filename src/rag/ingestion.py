@@ -59,6 +59,9 @@ def iter_documents(docs_dir: Path) -> Generator[tuple[str, str], None, None]:
 
 def clean_text(text: str) -> str:
     """Clean extracted text."""
+    # Documents are attacker-influenced input (anything can be uploaded);
+    # drop embedded scripts before the text ever reaches the LLM prompt.
+    text = re.sub(r"(?is)<script\b.*?</script>", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()

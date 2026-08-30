@@ -1,4 +1,5 @@
 """Configuration loader."""
+import copy
 import yaml
 from pathlib import Path
 from typing import Any
@@ -19,5 +20,5 @@ def load_config(config_path: str = "config.yaml") -> dict[str, Any]:
 
 
 def get_config() -> dict[str, Any]:
-    """Get cached config."""
-    return load_config()
+    """Get a deep copy of the cached config (callers may mutate their copy)."""
+    return copy.deepcopy(load_config())

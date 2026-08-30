@@ -9,6 +9,19 @@ create table if not exists public.history (
   created_at timestamp with time zone default now()
 );
 alter table public.history enable row level security;
--- For demo: allow all (use policies for production)
-create policy "Allow all for demo" on public.history for all using (true) with check (true);
+-- Drop the old demo policy if it was applied
+drop policy if exists "Allow all for demo" on public.history;
+
+-- RLS: a user may only touch rows whose user_email matches their JWT email.
+-- NOTE: server-side writes made with the plain anon key (no user JWT) will be
+-- rejected by these policies by design. StudyRAG uses Firebase Firestore as
+-- primary; if you re-enable the Supabase path, use the service-role key
+-- server-side, or pass the user's JWT to the client.
+create policy "history_select_own" on public.history
+  for select using (user_email = auth.jwt() ->> 'email');
+create policy "history_insert_own" on public.history
+  for insert with check (user_email = auth.jwt() ->> 'email');
+create policy "history_delete_own" on public.history
+  for delete using (user_email = auth.jwt() ->> 'email');
+
 create index if not exists idx_history_email_created on public.history (user_email, created_at desc);

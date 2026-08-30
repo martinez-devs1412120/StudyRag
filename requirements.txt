@@ -13,3 +13,4 @@ altair==5.5.0
 pyyaml==6.0.3
 supabase==2.9.1
 firebase-admin==6.5.0
+google-auth>=2.0  # direct import in src/rag/auth.py (id_token verification)

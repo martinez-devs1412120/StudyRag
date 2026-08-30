@@ -6,8 +6,41 @@ from src.rag.ingestion import extract_text, clean_text
 from src.rag.chunking import chunk_with_metadata
 from src.rag.auth import get_user, is_signed_in, sign_in_mock, sign_in_google, handle_oauth_callback, sign_out
 from src.rag.history import save_record, load_history
+from src.rag.auth import make_oauth_state, verify_oauth_state, verify_google_id_token
 import re
-import os, json
+import os, json, html, time, logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def esc(s) -> str:
+    """HTML-escape anything interpolated into unsafe_allow_html markdown."""
+    return html.escape(str(s), quote=True)
+
+def _is_mock_user(user) -> bool:
+    """Demo Gmail logins are spoofable by design — keep their history local-only."""
+    return (user or {}).get("provider") in ("mock", "gmail-mock")
+
+def _allow_question() -> bool:
+    """Per-session sliding-window rate limit (12 questions / minute)."""
+    now = time.time()
+    window = [t for t in st.session_state.get("q_times", []) if now - t < 60]
+    if len(window) >= 12:
+        st.session_state.q_times = window
+        return False
+    window.append(now)
+    st.session_state.q_times = window
+    return True
+
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+
+def _safe_upload_name(raw_name: str):
+    """Return a flattened, whitelist-checked filename, or None if unsafe."""
+    name = Path(raw_name).name
+    if (not name or name in {".", ".."} or "/" in raw_name or "\\" in raw_name
+            or "\x00" in raw_name or name.startswith(".")):
+        return None
+    return name
 
 st.set_page_config(page_title="StudyRAG", page_icon="◼", layout="wide")
 
@@ -201,25 +234,22 @@ try:
     handle_oauth_callback()
 except Exception:
     pass
-# Firebase verified Gmail via ?verified_email (from JS popup, verified via id_token if available)
+# Firebase verified Gmail via ?verified_email&id_token (from JS popup).
+# Fail closed: the session email comes ONLY from a Firebase-verified id_token.
+# A bare ?verified_email=... without a verifiable token signs nobody in.
 if "verified_email" in st.query_params:
-    try:
-        email = st.query_params["verified_email"]
-        token = st.query_params.get("id_token")
-        if token and os.getenv("FIREBASE_PROJECT_ID"):
-            try:
-                from src.rag.auth_firebase import init_firebase as _init
-                import firebase_admin.auth
-                _init()
-                decoded = firebase_admin.auth.verify_id_token(token)
-                email = decoded.get("email", email)
-            except Exception:
-                pass
-        if email and email.lower().endswith("@gmail.com"):
-            st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "google-verified"}
-            st.query_params.clear()
-    except Exception:
-        pass
+    email = None
+    token = st.query_params.get("id_token")
+    if token:
+        try:
+            from src.rag.auth_firebase import verify_firebase_email
+            email = verify_firebase_email(token)
+        except Exception:
+            logger.exception("Firebase verification raised")
+            email = None
+    st.query_params.clear()
+    if email and email.lower().endswith("@gmail.com"):
+        st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "provider": "google-verified"}
 
 if "page" not in st.session_state:
     st.session_state.page = "DASHBOARD"
@@ -248,15 +278,15 @@ with st.sidebar:
         <div class="sb-user">
             {PERSON_SVG}
             <div class="sb-user-info">
-                <span class="sb-user-name">{user.get('name','User')}</span>
-                <span class="sb-user-role">{user.get('email','')}</span>
+                <span class="sb-user-name">{esc(user.get('name','User'))}</span>
+                <span class="sb-user-role">{esc(user.get('email',''))}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("Sign out", key="signout", use_container_width=True):
             sign_out(); st.rerun()
         try:
-            hist = load_history(user["email"], limit=5)
+            hist = load_history(user["email"], limit=5, local_only=_is_mock_user(user))
             if hist:
                 st.caption(f"{len(hist)} saved chats")
         except Exception:
@@ -298,12 +328,18 @@ with st.sidebar:
                 "access_type": "offline",
                 "prompt": "consent",
             }
+            state = make_oauth_state()
+            if state:
+                params["state"] = state
             auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
             st.link_button("Sign in with Google (verified)", auth_url, use_container_width=True, help="Verifies Gmail ownership — prevents spoofing, saves to Firestore")
             # handle OAuth callback ?code=
             if "code" in st.query_params:
                 code = st.query_params["code"]
                 try:
+                    # Login-CSRF guard: state must be one we signed and fresh
+                    if not verify_oauth_state(st.query_params.get("state")):
+                        raise ValueError("invalid OAuth state")
                     import requests
                     token_res = requests.post("https://oauth2.googleapis.com/token", data={
                         "code": code,
@@ -312,19 +348,18 @@ with st.sidebar:
                         "redirect_uri": redirect_uri,
                         "grant_type": "authorization_code",
                     }, timeout=10).json()
-                    id_token = token_res.get("id_token")
-                    if id_token:
-                        # decode JWT payload to get email (no verification for demo, but Google verified)
-                        import base64
-                        payload = id_token.split(".")[1] + "==="
-                        data = json.loads(base64.urlsafe_b64decode(payload))
-                        email = data.get("email","")
-                        if email.lower().endswith("@gmail.com"):
-                            st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "avatar": f"https://i.pravatar.cc/100?u={email}", "provider": "google-verified"}
-                            st.query_params.clear()
-                            st.success(f"Verified {email}"); st.rerun()
-                except Exception as e:
-                    st.error(f"Google verify failed: {e}")
+                    if token_res.get("error"):
+                        raise ValueError(token_res.get("error"))
+                    email = verify_google_id_token(token_res.get("id_token"))
+                    if not email or not email.lower().endswith("@gmail.com"):
+                        raise ValueError("no verified Gmail in token")
+                    st.session_state["user"] = {"email": email.lower(), "name": email.split("@")[0], "provider": "google-verified"}
+                    st.query_params.clear()
+                    st.rerun()
+                except Exception:
+                    logger.exception("Google sign-in failed")
+                    st.query_params.clear()
+                    st.error("Google sign-in failed. Please try again.")
 
     st.markdown('<div class="sb-divider"></div>', unsafe_allow_html=True)
 
@@ -345,7 +380,7 @@ with st.sidebar:
     st.markdown('<div class="sb-section-title">Recent Chats</div>', unsafe_allow_html=True)
     if is_signed_in():
         user = get_user()
-        saved = load_history(user["email"], limit=5)
+        saved = load_history(user["email"], limit=5, local_only=_is_mock_user(user))
         if saved:
             for rec in saved[-5:]:
                 q = rec["question"][:28] + ("..." if len(rec["question"]) > 28 else "")
@@ -358,13 +393,13 @@ with st.sidebar:
             st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">-</span><span class="history-text">No saved chats</span></div>""", unsafe_allow_html=True)
         if st.button("Clear history", key="clear_saved"):
             from src.rag.history import clear_history as ch
-            ch(user["email"]); st.success("Cleared"); st.rerun()
+            ch(user["email"], local_only=_is_mock_user(user)); st.success("Cleared"); st.rerun()
     else:
         if st.session_state.messages:
             user_msgs = [m for m in st.session_state.messages if m["role"] == "user"]
             for msg in user_msgs[:5]:
                 text = msg["content"][:28] + ("..." if len(msg["content"]) > 28 else "")
-                st.markdown(f"""<div class="sb-history-item"><span class="history-icon">-</span><span class="history-text">{text}</span><span class="history-time">session</span></div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="sb-history-item"><span class="history-icon">-</span><span class="history-text">{esc(text)}</span><span class="history-time">session</span></div>""", unsafe_allow_html=True)
         else:
             st.markdown("""<div class="sb-history-item" style="opacity:0.5;"><span class="history-icon">-</span><span class="history-text">No chats yet</span></div>""", unsafe_allow_html=True)
 
@@ -416,55 +451,67 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
         for c, q in zip([ec1,ec2,ec3], ["Summarize these notes", "What are the key concepts?", "Explain the main topics"]):
             if c.button(q, use_container_width=True, key=f"ex_{q[:8]}"):
                 st.session_state.messages.append({"role":"user","content":q})
-                try:
-                    r=pipeline.query(q)
-                    st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
-                    if is_signed_in():
-                        try: save_record(get_user()["email"], q, r["answer"], r["sources"])
-                        except Exception: pass
-                except Exception as e:
-                    st.session_state.messages.append({"role":"assistant","content":f"Error: {e}","sources":[]})
+                if not _allow_question():
+                    st.session_state.messages.append({"role":"assistant","content":"⏳ Too many questions in a minute — please wait a moment.","sources":[]})
+                else:
+                    try:
+                        r=pipeline.query(q)
+                        st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
+                        if is_signed_in():
+                            try: save_record(get_user()["email"], q, r["answer"], r["sources"], local_only=_is_mock_user(get_user()))
+                            except Exception: pass
+                    except Exception:
+                        logger.exception("query failed")
+                        st.session_state.messages.append({"role":"assistant","content":"Something went wrong answering that. Please try again.","sources":[]})
                 st.rerun()
     else:
         st.caption(f"{len([m for m in st.session_state.messages if m['role']=='user'])} questions")
 
     for m in st.session_state.messages:
         if m["role"]=="user":
-            st.markdown(f'<div style="display:flex; justify-content:flex-end; margin:6px 0;"><div class="chat-user">{m["content"]}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex; justify-content:flex-end; margin:6px 0;"><div class="chat-user">{esc(m["content"])}</div></div>', unsafe_allow_html=True)
         else:
             clean_answer = strip_citations(m["content"])
-            st.markdown(f'<div style="display:flex; justify-content:flex-start; margin:6px 0;"><div class="chat-ai">{clean_answer}</div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex; justify-content:flex-start; margin:6px 0;"><div class="chat-ai">{esc(clean_answer)}</div></div>', unsafe_allow_html=True)
             if m.get("sources"):
                 with st.expander(f"{len(m['sources'])} sources", expanded=False):
                     for s in m["sources"]:
-                        st.markdown(f"<div class='source-card'><b style='font-size:12px;'>{s['source']}</b> <span style='float:right; font-size:10px; color:#9A9A9A;'>{s['score']:.2f}</span><br><span style='font-size:10px; color:#6B6B6B;'>chunk {s['chunk_id']}</span></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='source-card'><b style='font-size:12px;'>{esc(s['source'])}</b> <span style='float:right; font-size:10px; color:#9A9A9A;'>{s['score']:.2f}</span><br><span style='font-size:10px; color:#6B6B6B;'>chunk {esc(s['chunk_id'])}</span></div>", unsafe_allow_html=True)
 
     prompt = st.chat_input("Ask from your materials…", max_chars=400)
     if prompt:
         st.session_state.messages.append({"role":"user","content":prompt})
-        with st.spinner("Searching…"):
-            try:
-                r=pipeline.query(prompt)
-                st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
-                if is_signed_in():
-                    try: save_record(get_user()["email"], prompt, r["answer"], r["sources"])
-                    except Exception: pass
-            except Exception as e:
-                st.session_state.messages.append({"role":"assistant","content":f"Error: {e}","sources":[]})
+        if not _allow_question():
+            st.session_state.messages.append({"role":"assistant","content":"⏳ Too many questions in a minute — please wait a moment.","sources":[]})
+        else:
+            with st.spinner("Searching…"):
+                try:
+                    r=pipeline.query(prompt)
+                    st.session_state.messages.append({"role":"assistant","content":r["answer"],"sources":r["sources"]})
+                    if is_signed_in():
+                        try: save_record(get_user()["email"], prompt, r["answer"], r["sources"], local_only=_is_mock_user(get_user()))
+                        except Exception: pass
+                except Exception:
+                    logger.exception("query failed")
+                    st.session_state.messages.append({"role":"assistant","content":"Something went wrong answering that. Please try again.","sources":[]})
         st.rerun()
 
 elif st.session_state.page == "DATABASE":
     st.markdown('<div class="bar-label">Database</div>', unsafe_allow_html=True)
     st.markdown("`data/documents/` • chunk {} / {} • TF-IDF".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
+    # Upload/delete/clear are destructive or poison the shared corpus — sign-in required
+    can_manage = is_signed_in()
+    if not can_manage:
+        st.caption("🔒 Sign in (sidebar) to upload, delete, or re-index documents.")
     if docs:
         for p in docs:
             a,b,c = st.columns([5,1,1])
-            a.markdown(f"<div class='card' style='padding:10px;'><b style='font-size:13px;'>{p.name}</b><br><span style='font-size:11px; color:#9A9A9A;'>{p.suffix[1:].upper()} • {p.stat().st_size/1024:.1f} KB</span></div>", unsafe_allow_html=True)
-            if b.button("Del", key=f"del_{p.name}"):
+            a.markdown(f"<div class='card' style='padding:10px;'><b style='font-size:13px;'>{esc(p.name)}</b><br><span style='font-size:11px; color:#9A9A9A;'>{esc(p.suffix[1:].upper())} • {p.stat().st_size/1024:.1f} KB</span></div>", unsafe_allow_html=True)
+            if b.button("Del", key=f"del_{p.name}", disabled=not can_manage):
                 p.unlink(); st.rerun()
-            if c.button("Re-index", key=f"re_{p.name}"):
+            if c.button("Re-index", key=f"re_{p.name}", disabled=not can_manage):
                 t=clean_text(extract_text(p)); ch=list(chunk_with_metadata(t, source=p.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); st.toast(f"+{len(ch)} chunks"); st.rerun()
-        if st.button("Clear store"):
+        if st.button("Clear store", disabled=not can_manage):
             pipeline.clear(); st.success("Cleared"); st.rerun()
     else:
         st.markdown("""
@@ -483,13 +530,25 @@ elif st.session_state.page == "DATABASE":
         """, unsafe_allow_html=True)
     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
     up = st.file_uploader("Drag files here or choose files", type=["pdf","pptx"], accept_multiple_files=True, label_visibility="collapsed", help="PDF or PPTX, up to 200MB each")
-    if up and st.button("Ingest — make searchable", type="primary", use_container_width=True):
+    if up and can_manage and st.button("Ingest — make searchable", type="primary", use_container_width=True):
         d=Path("data/documents"); d.mkdir(parents=True, exist_ok=True)
         tot=0
         for f in up:
-            out=d/f.name; out.write_bytes(f.getbuffer())
-            t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=f.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); tot+=len(ch)
-        st.success(f"{len(up)} file(s) ingested as {tot} chunks"); st.rerun()
+            name = _safe_upload_name(f.name)
+            if not name:
+                st.warning(f"Skipped unsafe filename: {f.name[:40]}")
+                continue
+            if f.size > MAX_UPLOAD_BYTES:
+                st.warning(f"Skipped {name}: over 200MB")
+                continue
+            out=d/name; out.write_bytes(f.getbuffer())
+            try:
+                t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); tot+=len(ch)
+            except Exception:
+                logger.exception("Ingest failed for %s", name)
+                st.warning(f"Could not read {name} — skipped")
+    elif up and not can_manage:
+        st.caption("Sign in to ingest.")
 
 elif st.session_state.page == "STATISTICS":
     st.markdown('<div class="bar-label">Statistics</div>', unsafe_allow_html=True)

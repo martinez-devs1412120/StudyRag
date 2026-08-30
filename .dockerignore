@@ -1,0 +1,11 @@
+# Never bake secrets or local data into the image
+.env
+.git
+.gitignore
+.dockerignore
+data/
+__pycache__/
+*.pyc
+.venv/
+.streamlit/secrets.toml
+README.md
