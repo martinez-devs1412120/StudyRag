@@ -21,6 +21,20 @@ def _is_mock_user(user) -> bool:
     """Demo Gmail logins are spoofable by design — keep their history local-only."""
     return (user or {}).get("provider") in ("mock", "gmail-mock")
 
+def _admin_emails() -> set:
+    raw = os.getenv("ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+def _can_manage(user) -> bool:
+    """Corpus management is admin-only: a VERIFIED Google login whose email is
+    allowlisted in ADMIN_EMAILS. Demo/mock logins never qualify — otherwise
+    anyone could mock-sign-in as an admin's email and wipe the store."""
+    if not user or _is_mock_user(user):
+        return False
+    if user.get("provider") != "google-verified":
+        return False
+    return user.get("email", "").lower() in _admin_emails()
+
 def _allow_question() -> bool:
     """Per-session sliding-window rate limit (12 questions / minute)."""
     now = time.time()
@@ -499,10 +513,13 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
 elif st.session_state.page == "DATABASE":
     st.markdown('<div class="bar-label">Database</div>', unsafe_allow_html=True)
     st.markdown("`data/documents/` • chunk {} / {} • TF-IDF".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
-    # Upload/delete/clear are destructive or poison the shared corpus — sign-in required
-    can_manage = is_signed_in()
+    # Upload/delete/clear are destructive or poison the shared corpus — admins only
+    can_manage = _can_manage(get_user())
     if not can_manage:
-        st.caption("🔒 Sign in (sidebar) to upload, delete, or re-index documents.")
+        if is_signed_in():
+            st.caption("🔒 Admins only. Add your verified Gmail to `ADMIN_EMAILS` in Render → Environment to manage documents.")
+        else:
+            st.caption("🔒 Sign in with verified Google (sidebar) to manage documents. Admins are listed in `ADMIN_EMAILS`.")
     if docs:
         for p in docs:
             a,b,c = st.columns([5,1,1])
@@ -548,7 +565,7 @@ elif st.session_state.page == "DATABASE":
                 logger.exception("Ingest failed for %s", name)
                 st.warning(f"Could not read {name} — skipped")
     elif up and not can_manage:
-        st.caption("Sign in to ingest.")
+        st.caption("Only admins (ADMIN_EMAILS) can ingest.")
 
 elif st.session_state.page == "STATISTICS":
     st.markdown('<div class="bar-label">Statistics</div>', unsafe_allow_html=True)
