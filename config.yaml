@@ -4,11 +4,11 @@ CHUNK_SIZE: 800
 CHUNK_OVERLAP: 150
 TOP_K: 5
 
-# Embeddings (local, free)
+# Embeddings (local, free — runs via fastembed/ONNX, no torch)
 EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DEVICE: "cpu"  # or "cuda" if GPU available
 
-# Vector Store
+# Vector Store (SQLite + dense embeddings, one chunks.db file)
 VECTOR_DB_PATH: "./data/chroma_db"
 COLLECTION_NAME: "course_materials"
 

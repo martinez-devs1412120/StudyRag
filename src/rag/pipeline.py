@@ -41,9 +41,10 @@ class RAGPipeline:
                 overlap=self.cfg["CHUNK_OVERLAP"]
             ))
 
-            self.store.add_documents(chunks)
+            # replace (not append): re-running ingest never duplicates chunks
+            self.store.replace_source(filename, chunks)
             total_chunks += len(chunks)
-            print(f"    Added {len(chunks)} chunks")
+            print(f"    Upserted {len(chunks)} chunks")
 
         print(f"Done! Total chunks: {total_chunks}")
         return total_chunks

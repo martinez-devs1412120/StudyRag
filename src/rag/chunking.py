@@ -1,5 +1,12 @@
 """Text chunking utilities."""
+import hashlib
 from typing import Generator
+
+
+def chunk_hash(source: str, text: str) -> str:
+    """Stable content ID for a chunk — same source+text always maps to the same
+    ID, which is what makes re-ingestion idempotent (upsert, not append)."""
+    return hashlib.sha1(f"{source}|{text}".encode("utf-8")).hexdigest()
 
 
 def chunk_text(

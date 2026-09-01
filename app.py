@@ -7,6 +7,7 @@ from src.rag.chunking import chunk_with_metadata
 from src.rag.auth import get_user, is_signed_in, sign_in_mock, sign_in_google, handle_oauth_callback, sign_out
 from src.rag.history import save_record, load_history
 from src.rag.auth import make_oauth_state, verify_oauth_state, verify_google_id_token
+from src.rag.docstore import push_chunks, all_chunks as docstore_all_chunks, remove_source as doc_remove_source, clear_all as doc_clear_all
 import re
 import os, json, html, time, logging
 
@@ -240,7 +241,19 @@ div[data-testid="stSidebar"] input:focus {
 
 @st.cache_resource
 def get_pipeline():
-    return RAGPipeline()
+    p = RAGPipeline()
+    # The SQLite index lives on an ephemeral disk (Render wipes data/ on every
+    # deploy). Firestore holds the source of truth — rebuild the index from it
+    # when empty so documents survive redeploys.
+    try:
+        if p.store.count() == 0:
+            chunks = docstore_all_chunks()
+            if chunks:
+                p.store.add_documents(chunks)
+                logger.info("Rebuilt vector index from Firestore: %d chunks", len(chunks))
+    except Exception:
+        logger.exception("Index rebuild on boot failed")
+    return p
 pipeline = get_pipeline()
 
 # handle OAuth return (?code=) before UI
@@ -512,7 +525,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
 
 elif st.session_state.page == "DATABASE":
     st.markdown('<div class="bar-label">Database</div>', unsafe_allow_html=True)
-    st.markdown("`data/documents/` • chunk {} / {} • TF-IDF".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
+    st.markdown("`data/documents/` • chunk {} / {} • MiniLM embeddings".format(pipeline.cfg["CHUNK_SIZE"], pipeline.cfg["CHUNK_OVERLAP"]))
     # Upload/delete/clear are destructive or poison the shared corpus — admins only
     can_manage = _can_manage(get_user())
     if not can_manage:
@@ -525,10 +538,13 @@ elif st.session_state.page == "DATABASE":
             a,b,c = st.columns([5,1,1])
             a.markdown(f"<div class='card' style='padding:10px;'><b style='font-size:13px;'>{esc(p.name)}</b><br><span style='font-size:11px; color:#9A9A9A;'>{esc(p.suffix[1:].upper())} • {p.stat().st_size/1024:.1f} KB</span></div>", unsafe_allow_html=True)
             if b.button("Del", key=f"del_{p.name}", disabled=not can_manage):
-                p.unlink(); st.rerun()
+                doc_remove_source(p.name)  # Firestore (source of truth)
+                p.unlink()
+                st.rerun()
             if c.button("Re-index", key=f"re_{p.name}", disabled=not can_manage):
-                t=clean_text(extract_text(p)); ch=list(chunk_with_metadata(t, source=p.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); st.toast(f"+{len(ch)} chunks"); st.rerun()
+                t=clean_text(extract_text(p)); ch=list(chunk_with_metadata(t, source=p.name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.replace_source(p.name, ch); push_chunks(ch); st.toast(f"+{len(ch)} chunks"); st.rerun()
         if st.button("Clear store", disabled=not can_manage):
+            doc_clear_all()
             pipeline.clear(); st.success("Cleared"); st.rerun()
     else:
         st.markdown("""
@@ -560,7 +576,7 @@ elif st.session_state.page == "DATABASE":
                 continue
             out=d/name; out.write_bytes(f.getbuffer())
             try:
-                t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.add_documents(ch); tot+=len(ch)
+                t=clean_text(extract_text(out)); ch=list(chunk_with_metadata(t, source=name, chunk_size=pipeline.cfg["CHUNK_SIZE"], overlap=pipeline.cfg["CHUNK_OVERLAP"])); pipeline.store.replace_source(name, ch); push_chunks(ch); tot+=len(ch)
             except Exception:
                 logger.exception("Ingest failed for %s", name)
                 st.warning(f"Could not read {name} — skipped")
@@ -571,7 +587,7 @@ elif st.session_state.page == "STATISTICS":
     st.markdown('<div class="bar-label">Statistics</div>', unsafe_allow_html=True)
     k1,k2,k3 = st.columns(3)
     k1.metric("Chunks", stats["document_count"]); k2.metric("Files", len(docs)); k3.metric("Top-K", pipeline.cfg["TOP_K"])
-    st.caption("TF-IDF / cosine similarity")
+    st.caption("MiniLM embeddings / cosine similarity")
 
 elif st.session_state.page == "SETTINGS":
     st.markdown('<div class="bar-label">Settings</div>', unsafe_allow_html=True)

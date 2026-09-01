@@ -1,4 +1,4 @@
-# Core - slim for Render (TF-IDF, no torch)
+# Core - slim for Render (no torch: fastembed runs MiniLM via ONNX)
 pypdf==3.17.1
 python-pptx==1.0.2
 groq==1.7.0
@@ -6,7 +6,6 @@ python-dotenv==1.0.0
 tqdm==4.66.1
 typer==0.9.0
 rich==13.7.0
-scikit-learn==1.9.0
 streamlit==1.62.0
 pandas==2.3.3
 altair==5.5.0
@@ -14,3 +13,6 @@ pyyaml==6.0.3
 supabase==2.9.1
 firebase-admin==6.5.0
 google-auth>=2.0  # direct import in src/rag/auth.py (id_token verification)
+numpy>=1.26
+fastembed==0.8.0
+onnxruntime==1.20.1  # pinned: newer wheels crash on some Windows installs
