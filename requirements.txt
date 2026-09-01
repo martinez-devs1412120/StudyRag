@@ -1,5 +1,5 @@
 # Core - slim for Render (no torch: fastembed runs MiniLM via ONNX)
-pypdf==3.17.1
+pypdf==6.16.2
 python-pptx==1.0.2
 groq==1.7.0
 python-dotenv==1.0.0
