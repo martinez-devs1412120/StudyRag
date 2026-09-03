@@ -1,0 +1,40 @@
+# StudyRAG infrastructure (Task 2).
+# This file adds backing services only — it does NOT replace the existing
+# Dockerfile or the running Streamlit app. To start the API service once
+# it's wired in, run: docker compose up -d api
+
+services:
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: studyrag-db
+    environment:
+      POSTGRES_USER: studyrag
+      POSTGRES_PASSWORD: studyrag
+      POSTGRES_DB: studyrag
+    ports:
+      - "5432:5432"
+    volumes:
+      - studyrag_pgdata:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studyrag -d studyrag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: studyrag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - studyrag_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  studyrag_pgdata:
+  studyrag_redisdata:
