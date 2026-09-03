@@ -1,0 +1,6 @@
+# StudyRAG API — incremental deps on top of the existing app.
+# Streamlit + CLI continue to work unchanged; the API is a parallel service.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic-settings>=2.0
+sqlalchemy>=2.0

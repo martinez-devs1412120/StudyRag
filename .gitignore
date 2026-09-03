@@ -6,3 +6,6 @@ __pycache__/
 data/documents/*
 !data/documents/.gitkeep
 data/history/
+api/__pycache__/
+api/routers/__pycache__/
+.api/
