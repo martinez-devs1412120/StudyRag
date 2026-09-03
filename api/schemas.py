@@ -3,17 +3,8 @@
 Kept thin and forward-compatible: future endpoints (query, ingest, history)
 will live here too.
 """
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
-
-
-class HealthResponse(BaseModel):
-    status: str = Field(..., description="'ok' when the service is responsive")
-    api_version: str
-    database_configured: bool
-    vector_store_chunks: Optional[int] = Field(
-        None, description="Number of chunks in the on-disk vector store, if reachable"
-    )
 
 
 class Source(BaseModel):
