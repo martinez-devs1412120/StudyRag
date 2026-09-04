@@ -1,13 +1,13 @@
-"""Database connection helper (reserved for Phase 2).
+"""Database availability helper.
 
-Kept separate from `models.py` so callers can introspect DB availability
-without importing the entire SQLAlchemy stack. Today this is a thin
-wrapper that reports whether a DATABASE_URL was configured.
+Canonical engine + session logic lives in `api.db.session`. This module
+exists for backwards compatibility with the Task 1 scaffold and exposes
+just the question "is the database configured?".
 """
-from api.config import get_settings
+from api.db.session import is_db_available
 
 
 def is_database_configured() -> bool:
     """True iff DATABASE_URL is set. The API boots and serves requests
     regardless; persistence is opt-in."""
-    return bool(get_settings().database_url)
+    return is_db_available()

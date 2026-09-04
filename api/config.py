@@ -28,13 +28,38 @@ class Settings(BaseSettings):
     top_k: int = 5
     relevance_threshold: float = 0.35  # top score below this -> no LLM call
 
+    # LLM provider (Task 13 will add Groq streaming)
+    groq_api_key: str | None = None
+    groq_model: str = "openai/gpt-oss-20b"
+
+    # Observability (Task 15 will add Langfuse)
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
+
+    # Rate limiting (Task 16)
+    rate_limit_per_minute: int = 10
+
 
 _settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    """Cached settings accessor (so tests can override via env)."""
+    """Cached settings accessor.
+
+    Re-parsing env on every call is wasteful and creates surprising test
+    behavior (changing env mid-process wouldn't take effect). Cached; tests
+    that need different env can call `reset_settings_cache()`.
+    """
     global _settings
     if _settings is None:
         _settings = Settings()
     return _settings
+
+
+def reset_settings_cache() -> None:
+    """Drop the cached Settings so the next get_settings() re-reads env.
+
+    Used by tests and by any code that needs to pick up an env change.
+    """
+    global _settings
+    _settings = None
