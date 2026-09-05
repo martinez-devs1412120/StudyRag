@@ -22,7 +22,7 @@ Notes:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 
 from pgvector.sqlalchemy import Vector
@@ -34,7 +34,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -42,6 +41,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 def _new_id() -> str:
     """String UUID4 — stored as TEXT for portability across SQLite/Postgres."""
     return str(uuid.uuid4())
+
+
+def _utcnow() -> datetime:
+    """Python-side UTC now (microsecond precision, portable across dialects)."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -57,7 +61,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
     workspaces: Mapped[List["WorkspaceUser"]] = relationship(
@@ -74,7 +78,7 @@ class Workspace(Base):
         String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
     members: Mapped[List["WorkspaceUser"]] = relationship(
@@ -100,7 +104,7 @@ class WorkspaceUser(Base):
     # "admin" can manage members + documents; "member" can only query.
     role: Mapped[str] = mapped_column(String(32), nullable=False, default="member")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="members")
@@ -129,10 +133,10 @@ class Document(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )
 
     workspace: Mapped["Workspace"] = relationship(back_populates="documents")
@@ -157,7 +161,7 @@ class Chunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
 
     document: Mapped["Document"] = relationship(back_populates="chunks")
