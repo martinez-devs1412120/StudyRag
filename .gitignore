@@ -8,4 +8,7 @@ data/documents/*
 data/history/
 api/__pycache__/
 api/routers/__pycache__/
+api/db/__pycache__/
+api/migrations/__pycache__/
+api/migrations/versions/__pycache__/
 .api/
