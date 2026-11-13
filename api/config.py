@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Env vars are read automatically; .env file is honored when present
     # but the /api layer doesn't share the repo-root .env by default — pass
-    # DATABASE_URL, etc., explicitly when running uvicorn.
+    # DATABASE_URL and the other settings explicitly when running uvicorn.
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     api_title: str = "StudyRAG API"

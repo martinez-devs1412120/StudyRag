@@ -338,7 +338,7 @@ with st.sidebar:
         gmail = st.text_input("Email", placeholder="you@gmail.com", label_visibility="collapsed", key="gmail_demo")
         if st.button("Sign in (demo Gmail — not verified)", use_container_width=True, key="btn_signin", help="Demo: anyone can type any Gmail. Use Google below for real verification."):
             ok, msg = sign_in_mock(gmail)
-            if ok: st.success(msg + " — ⚠️ demo, spoofable"); st.rerun()
+            if ok: st.success(msg + " — WARN demo, spoofable"); st.rerun()
             else: st.error(msg)
         # Real Google - server-side OAuth (works in iframe, no popup block)
         google_id = os.getenv("GOOGLE_CLIENT_ID")
@@ -479,7 +479,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
             if c.button(q, use_container_width=True, key=f"ex_{q[:8]}"):
                 st.session_state.messages.append({"role":"user","content":q})
                 if not _allow_question():
-                    st.session_state.messages.append({"role":"assistant","content":"⏳ Too many questions in a minute — please wait a moment.","sources":[]})
+                    st.session_state.messages.append({"role":"assistant","content":"Too many questions in a minute — please wait a moment.","sources":[]})
                 else:
                     try:
                         r=pipeline.query(q)
@@ -509,7 +509,7 @@ if st.session_state.page in ("DASHBOARD","MEMBERS"):
     if prompt:
         st.session_state.messages.append({"role":"user","content":prompt})
         if not _allow_question():
-            st.session_state.messages.append({"role":"assistant","content":"⏳ Too many questions in a minute — please wait a moment.","sources":[]})
+            st.session_state.messages.append({"role":"assistant","content":"Too many questions in a minute — please wait a moment.","sources":[]})
         else:
             with st.spinner("Searching…"):
                 try:
@@ -530,9 +530,9 @@ elif st.session_state.page == "DATABASE":
     can_manage = _can_manage(get_user())
     if not can_manage:
         if is_signed_in():
-            st.caption("🔒 Admins only. Add your verified Gmail to `ADMIN_EMAILS` in Render → Environment to manage documents.")
+            st.caption("Admins only. Add your verified Gmail to `ADMIN_EMAILS` in Render → Environment to manage documents.")
         else:
-            st.caption("🔒 Sign in with verified Google (sidebar) to manage documents. Admins are listed in `ADMIN_EMAILS`.")
+            st.caption("Sign in with verified Google (sidebar) to manage documents. Admins are listed in `ADMIN_EMAILS`.")
     if docs:
         for p in docs:
             a,b,c = st.columns([5,1,1])
